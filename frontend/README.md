@@ -1,32 +1,62 @@
-# React + TypeScript + Vite
+# GridGuard Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + Vite + TypeScript operator dashboard for GridGuard. Product requirements live in
+[SPEC.md](../SPEC.md); engineering conventions live in [CLAUDE.md](../CLAUDE.md).
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Vite, React, TypeScript (strict), Tailwind CSS v4, shadcn/ui, React Router, Recharts.
 
-## React Compiler
+## Setup
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+cp .env.example .env   # then fill in your Supabase credentials
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Commands
+
+| Command           | Description                         |
+| ----------------- | ----------------------------------- |
+| `npm run dev`     | Start the Vite dev server (:5173)   |
+| `npm run build`   | Type-check and build for production |
+| `npm run preview` | Preview the production build        |
+| `npm run lint`    | Run Oxlint                          |
+
+## Structure
+
+```
+src/
+├── assets/          static assets imported by components
+├── components/
+│   ├── common/      shared, feature-agnostic building blocks
+│   ├── layout/      sidebar, top navigation, page shells
+│   ├── dashboard/   summary cards, transformer table, grid tree
+│   ├── transformer/ transformer detail views
+│   ├── charts/      Recharts wrappers (load history + prediction)
+│   ├── alerts/      alert panel and alert items
+│   └── ui/          shadcn/ui primitives (generated — avoid hand edits)
+├── hooks/           reusable React hooks
+├── lib/             third-party setup and shared helpers (cn, clients)
+├── pages/           route-level components
+├── services/        backend API calls
+├── types/           shared TypeScript types
+└── utils/           pure helper functions
+```
+
+Business logic stays out of components: put API calls in `services/`, formatting and
+calculation helpers in `utils/`, and stateful reuse in `hooks/`.
+
+## Adding shadcn/ui components
+
+```bash
+npx shadcn add <component>
+```
+
+Components land in `src/components/ui/`. The theme tokens in `src/index.css` are
+hand-maintained — review any CLI changes to that file before keeping them.
+
+## Environment variables
+
+`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. Only `VITE_`-prefixed variables reach
+the browser bundle, and everything in it is public — never put a service-role key here.
