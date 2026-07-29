@@ -17,3 +17,4 @@ class Transformer(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     telemetry = relationship("Telemetry", back_populates="transformer", cascade="all, delete-orphan")
+    alerts = relationship("Alert", back_populates="transformer", cascade="all, delete-orphan")
