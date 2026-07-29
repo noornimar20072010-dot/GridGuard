@@ -14,11 +14,36 @@ type Page = 'overview' | 'grid-tree' | 'assets';
 
 const INITIAL_ZONES = MOCK_ZONES;
 
+// Health is decided here — deterministically, from load vs. the configured thresholds.
+// An asset is judged on its worst case: current load or predicted load, whichever is higher.
+function loadStatus(loadPct: number, s: Settings): Status {
+  return loadPct >= s.critThreshold ? 'crit' : loadPct >= s.warnThreshold ? 'warn' : 'ok';
+}
+function assetStatus(asset: Asset, s: Settings): Status {
+  return loadStatus(Math.max(asset.load, asset.predictedLoad ?? 0), s);
+}
+function assetsWithStatus(assets: Asset[], s: Settings): Asset[] {
+  return assets.map(a => ({ ...a, status: assetStatus(a, s) }));
+}
+function zonesWithStatus(zones: Zone[], s: Settings): Zone[] {
+  return zones.map(z => ({ ...z, assets: assetsWithStatus(z.assets, s) }));
+}
+
+const PAGE_TITLES: Record<Page, string> = {
+  overview: 'GLOBAL UTILITY OPERATIONS DASHBOARD',
+  'grid-tree': 'GRID TOPOLOGY — NORTHEAST REGION',
+  assets: 'ASSET REGISTRY',
+  alerts: 'ALERTS & INCIDENTS',
+  reporting: 'OPERATIONAL REPORTING',
+  settings: 'SETTINGS & THRESHOLDS',
+};
+
 // ── Sub-components ─────────────────────────────────────────────────────────
 
 // Load bar
 function LoadBar({ value, predicted }: { value: number; predicted?: number | null }) {
-  const color = value >= 90 ? '#ef4444' : value >= 80 ? '#f0a92e' : '#21d07a';
+  const settings = useSettings();
+  const color = statusColor(loadStatus(value, settings));
   return (
     <div className="w-full">
       <div className="flex justify-between text-[10px] mb-1">
@@ -85,9 +110,9 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             ))}
           </div>
           <div className="mt-auto bg-base/90 backdrop-blur border border-line p-3 rounded-lg flex flex-col gap-2 font-mono text-[10px] text-ink/80">
-            <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-ok rounded" /> Normal (&lt;80% Load)</span>
-            <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-warn rounded" /> Warning (80-90%)</span>
-            <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-crit rounded" /> Critical Risk (&gt;90%)</span>
+            <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-ok rounded" /> Normal (&lt;{settings.warnThreshold}% Load)</span>
+            <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-warn rounded" /> Warning ({settings.warnThreshold}-{settings.critThreshold}%)</span>
+            <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-crit rounded" /> Critical Risk (&gt;{settings.critThreshold}%)</span>
           </div>
         </div>
 
@@ -144,7 +169,7 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 <span className="text-sm font-semibold text-crit flex items-center gap-1">PREDICTED OVERLOAD — 96% <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15"/></svg></span>
               </div>
             </div>
-            <span className="h-2 w-2 rounded-full bg-crit animate-pulse mt-1 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+            <span className="h-2 w-2 rounded-full bg-crit mt-1 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse" />
           </div>
           <div className="flex flex-col lg:flex-row gap-6 mt-2 flex-1">
             <div className="flex-1 bg-raised/50 rounded-lg p-4 border border-line flex flex-col justify-between">
@@ -225,6 +250,8 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
   const [filter, setFilter] = useState<Status | 'all'>('all');
   const [search, setSearch] = useState('');
 
+  const selected = allAssets.find(a => a.id === selectedId) ?? null;
+
   const filtered = allAssets.filter(a => {
     if (filter !== 'all' && a.status !== filter) return false;
     if (search && !a.id.toLowerCase().includes(search.toLowerCase()) && !a.zone.toLowerCase().includes(search.toLowerCase())) return false;
@@ -282,7 +309,7 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
             {filtered.map(asset => (
               <button
                 key={asset.id}
-                onClick={() => setSelected(prev => prev?.id === asset.id ? null : asset)}
+                onClick={() => setSelectedId(prev => prev === asset.id ? null : asset.id)}
                 className={`w-full grid grid-cols-[1fr_1fr_2fr_1fr_1fr_1fr_1fr] gap-3 px-4 py-3 text-left transition-all duration-200 hover:bg-white/[0.03] ${selected?.id === asset.id ? 'bg-white/[0.05] border-l-2 border-ok' : ''}`}
               >
                 <span className={`font-mono font-bold text-sm ${asset.status === 'crit' ? 'text-crit' : 'text-white'}`}>{asset.id}</span>
@@ -291,7 +318,7 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
                   <LoadBar value={asset.load} />
                 </div>
                 <span className="font-mono text-[12px] text-ink/80">{asset.voltage} kV</span>
-                <span className={`font-mono text-[12px] ${asset.tempC > 70 ? 'text-warn' : 'text-ink/80'}`}>{asset.tempC}°C</span>
+                <span className={`font-mono text-[12px] ${asset.tempC >= settings.tempThreshold ? 'text-warn' : 'text-ink/80'}`}>{asset.tempC}°C</span>
                 <StatusBadge status={asset.status} />
                 <span className="font-mono text-[11px] text-ink/40">{asset.lastUpdated}</span>
               </button>
@@ -321,8 +348,8 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
               {[
                 { label: 'Voltage', val: `${selected.voltage} kV`, icon: '⚡' },
                 { label: 'Current', val: `${selected.current} A`, icon: '〜' },
-                { label: 'Temperature', val: `${selected.tempC} °C`, icon: '🌡', alert: selected.tempC > 70 },
-                { label: 'Pred. Load', val: `${selected.predictedLoad}%`, icon: '↑', alert: (selected.predictedLoad ?? 0) >= 90 },
+                { label: 'Temperature', val: `${selected.tempC} °C`, icon: '🌡', alert: selected.tempC >= settings.tempThreshold },
+                { label: 'Pred. Load', val: `${selected.predictedLoad}%`, icon: '↑', alert: (selected.predictedLoad ?? 0) >= settings.critThreshold },
               ].map(m => (
                 <div key={m.label} className={`bg-raised/50 border rounded-lg p-3 ${m.alert ? 'border-warn/30' : 'border-white/5'}`}>
                   <p className="text-[10px] text-ink/50 font-mono uppercase">{m.label}</p>
@@ -372,7 +399,7 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
                   <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-crit font-bold">Operator Brief</p>
                 </div>
                 <p className="text-[11px] text-ink/80 leading-relaxed">
-                  T-104 is projecting <strong className="text-crit">96%</strong> load within 28 minutes. Oil temperature at <strong className="text-warn">{selected.tempC}°C</strong> and rising. Immediate load-shedding recommended.
+                  {selected.id} is projecting <strong className="text-crit">{selected.predictedLoad}%</strong> load, above the {settings.critThreshold}% critical threshold. Oil temperature at <strong className="text-warn">{selected.tempC}°C</strong>. Immediate load-shedding recommended.
                 </p>
               </div>
             )}
@@ -402,6 +429,7 @@ function isPage(key: string): key is Page {
 }
 
 export function Dashboard() {
+  const navigate = useNavigate();
   const [page, setPage] = useState<Page>('overview');
 
   function goToPage(next: Page) {

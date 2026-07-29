@@ -1,4 +1,7 @@
 from fastapi import FastAPI
 
-# TODO(Milestone 2+): register routers from api/routes as they are implemented.
+from api.routes.transformers import router as transformers_router
+
 app = FastAPI(title="GridGuard API")
+
+app.include_router(transformers_router)
