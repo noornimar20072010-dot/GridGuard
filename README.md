@@ -95,7 +95,7 @@ copy .env.example .env       # then fill in your Supabase/Claude credentials
 | `npm run dev`     | Start the Vite dev server           |
 | `npm run build`   | Type-check and build for production |
 | `npm run preview` | Preview the production build        |
-| `npm run lint`    | Run ESLint                          |
+| `npm run lint`    | Run Oxlint                          |
 
 ### Backend (from `backend/`, with `venv` activated)
 
