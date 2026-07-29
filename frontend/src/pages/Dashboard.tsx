@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 type Status = 'ok' | 'warn' | 'crit';
-type Page = 'overview' | 'grid-tree' | 'assets';
+type AlertSeverity = 'critical' | 'warning' | 'info';
+type AlertState = 'active' | 'acknowledged' | 'resolved';
+type Page = 'overview' | 'grid-tree' | 'assets' | 'alerts' | 'reporting' | 'settings';
 
 interface Asset {
   id: string;
@@ -24,6 +27,72 @@ interface Zone {
   assets: Asset[];
   expanded: boolean;
 }
+
+// ── Operator account ───────────────────────────────────────────────────────
+// Identity and role are account data, not local preferences — a client that can
+// set its own role can grant itself permissions. This is deliberately outside
+// Settings and never read from local storage, so it cannot be changed from the
+// browser. Milestone 2: source it from the authenticated Supabase session and
+// verify the role server-side on every protected request.
+const CURRENT_OPERATOR = {
+  name: 'A. Petrov',
+  role: 'Operator',
+} as const;
+
+// ── Settings ───────────────────────────────────────────────────────────────
+// Local threshold and session preferences only.
+interface Settings {
+  warnThreshold: number; // % of rated load
+  critThreshold: number; // % of rated load
+  tempThreshold: number; // °C
+  autoLogout: boolean;
+  autoLogoutMinutes: number; // minutes of inactivity before logout
+}
+
+const DEFAULT_SETTINGS: Settings = {
+  warnThreshold: 80,
+  critThreshold: 90,
+  tempThreshold: 70,
+  autoLogout: true,
+  autoLogoutMinutes: 30,
+};
+
+// Bounds for the inactivity window, shared by the slider and the storage guard.
+const MIN_LOGOUT_MINUTES = 5;
+const MAX_LOGOUT_MINUTES = 120;
+
+const SETTINGS_KEY = 'gridguard.settings';
+
+function loadSettings(): Settings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return DEFAULT_SETTINGS;
+    const stored = JSON.parse(raw) as Record<string, unknown>;
+
+    // Read back only known preference keys, and only when the type matches, so
+    // stored data from an earlier build (or a hand-edited entry) can't introduce
+    // anything the app didn't define. Also lets later milestones add settings
+    // without breaking existing storage.
+    const next = { ...DEFAULT_SETTINGS };
+    for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
+      if (typeof stored[key] === typeof DEFAULT_SETTINGS[key]) {
+        (next as Record<string, unknown>)[key] = stored[key];
+      }
+    }
+
+    // Storage is hand-editable, so re-apply the bounds the UI enforces.
+    next.warnThreshold = clamp(next.warnThreshold, 1, 99);
+    next.critThreshold = clamp(next.critThreshold, next.warnThreshold + 1, 100);
+    next.tempThreshold = clamp(next.tempThreshold, 30, 120);
+    next.autoLogoutMinutes = clamp(next.autoLogoutMinutes, MIN_LOGOUT_MINUTES, MAX_LOGOUT_MINUTES);
+    return next;
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+const SettingsContext = createContext<Settings>(DEFAULT_SETTINGS);
+const useSettings = () => useContext(SettingsContext);
 
 // ── Mock Data ──────────────────────────────────────────────────────────────
 const INITIAL_ZONES: Zone[] = [
@@ -61,6 +130,87 @@ const INITIAL_ZONES: Zone[] = [
   },
 ];
 
+// ── Alert & Report Data ────────────────────────────────────────────────────
+interface AlertItem {
+  id: string;
+  severity: AlertSeverity;
+  state: AlertState;
+  assetId: string;
+  zone: string;
+  title: string;
+  detail: string;
+  timestamp: string;
+  ackBy?: string;
+}
+
+const ALERTS: AlertItem[] = [
+  { id: 'ALT-001', severity: 'critical', state: 'active',       assetId: 'T-104', zone: 'Zone A', title: 'Predicted Overload — 96%', detail: 'Load projected to reach 96% within 28 min. Oil temp 78°C rising. Immediate action required.', timestamp: '13:47:02' },
+  { id: 'ALT-002', severity: 'warning',  state: 'active',       assetId: 'T-202', zone: 'Zone B', title: 'High Load Warning — 81%', detail: 'Load exceeds 80% threshold. Predicted 85% within 60 min if trend continues.', timestamp: '13:43:17' },
+  { id: 'ALT-003', severity: 'warning',  state: 'acknowledged', assetId: 'T-202', zone: 'Zone B', title: 'Elevated Temperature — 69°C', detail: 'Oil temperature trending upward. Recommend inspection if temp reaches 75°C.', timestamp: '13:30:44', ackBy: 'A. Petrov' },
+  { id: 'ALT-004', severity: 'warning',  state: 'active',       assetId: 'T-104', zone: 'Zone A', title: 'Voltage Sag Detected — 10.8 kV', detail: 'Supply voltage 3.5% below nominal. May indicate upstream feeder strain.', timestamp: '13:22:59' },
+  { id: 'ALT-005', severity: 'info',     state: 'active',       assetId: 'T-101', zone: 'Zone A', title: 'Scheduled Maintenance Due', detail: 'T-101 is due for quarterly oil analysis. Schedule within next 7 days.', timestamp: '12:00:00' },
+  { id: 'ALT-006', severity: 'info',     state: 'active',       assetId: 'T-305', zone: 'Zone C', title: 'Firmware Update Available', detail: 'Remote monitoring unit firmware v2.4.1 available. Approve to schedule update during low-load window.', timestamp: '09:15:00' },
+  { id: 'ALT-007', severity: 'critical', state: 'resolved',     assetId: 'T-201', zone: 'Zone B', title: 'Overcurrent Trip — Cleared', detail: 'T-201 experienced brief overcurrent at 13:01. Protective relay cleared within 120ms. No damage detected.', timestamp: '13:01:32', ackBy: 'System' },
+];
+
+interface ReportSection {
+  title: string;
+  rows: { label: string; value: string; trend?: 'up' | 'down' | 'flat'; good?: boolean }[];
+}
+
+const REPORT_SECTIONS: ReportSection[] = [
+  {
+    title: 'System Load Summary',
+    rows: [
+      { label: 'Peak Load (24h)',      value: '13.4 GW',  trend: 'up',   good: false },
+      { label: 'Average Load (24h)',   value: '10.8 GW',  trend: 'flat', good: true },
+      { label: 'Current Load',         value: '11.2 GW',  trend: 'up',   good: true },
+      { label: 'Load Factor',          value: '80.6%',    trend: 'flat', good: true },
+      { label: 'Reactive Power',       value: '2.3 GVAR', trend: 'down', good: true },
+    ],
+  },
+  {
+    title: 'Asset Health Overview',
+    rows: [
+      { label: 'Total Assets',          value: '8',       trend: 'flat', good: true },
+      { label: 'Healthy',               value: '6 (75%)', trend: 'flat', good: true },
+      { label: 'In Warning',            value: '1 (12%)', trend: 'up',   good: false },
+      { label: 'Critical',              value: '1 (12%)', trend: 'flat', good: false },
+      { label: 'Avg. Load (all)',       value: '58.3%',   trend: 'up',   good: false },
+      { label: 'Avg. Temperature',      value: '51.7°C',  trend: 'up',   good: false },
+    ],
+  },
+  {
+    title: 'Alerts (Last 24h)',
+    rows: [
+      { label: 'Total Alerts',          value: '7',  trend: 'up',   good: false },
+      { label: 'Critical',              value: '2',  trend: 'up',   good: false },
+      { label: 'Warnings',              value: '3',  trend: 'flat', good: true },
+      { label: 'Informational',         value: '2',  trend: 'flat', good: true },
+      { label: 'Resolved',              value: '1',  trend: 'up',   good: true },
+      { label: 'Avg. Response Time',    value: '4m 32s', trend: 'down', good: true },
+    ],
+  },
+  {
+    title: 'Grid Line Availability',
+    rows: [
+      { label: 'Total Lines',           value: '48',    trend: 'flat', good: true },
+      { label: 'Active Lines',          value: '46 (96%)', trend: 'flat', good: true },
+      { label: 'Degraded',              value: '2 (4%)',   trend: 'flat', good: false },
+      { label: 'Offline',               value: '0',        trend: 'flat', good: true },
+      { label: 'Utilisation (avg)',      value: '71.2%',    trend: 'up',   good: false },
+    ],
+  },
+];
+
+// Bar chart data for 24h load trend (reporting)
+const LOAD_24H = [
+  {h:'00',v:28},{h:'01',v:24},{h:'02',v:21},{h:'03',v:19},{h:'04',v:18},{h:'05',v:22},
+  {h:'06',v:31},{h:'07',v:48},{h:'08',v:67},{h:'09',v:79},{h:'10',v:84},{h:'11',v:88},
+  {h:'12',v:91},{h:'13',v:95},{h:'14',v:87},{h:'15',v:80},{h:'16',v:76},{h:'17',v:82},
+  {h:'18',v:85},{h:'19',v:79},{h:'20',v:70},{h:'21',v:62},{h:'22',v:51},{h:'23',v:38},
+];
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 function statusColor(s: Status) {
   return s === 'ok' ? '#21d07a' : s === 'warn' ? '#f0a92e' : '#ef4444';
@@ -71,6 +221,30 @@ function statusLabel(s: Status) {
 function statusBg(s: Status) {
   return s === 'ok' ? 'bg-ok/10 border-ok/30 text-ok' : s === 'warn' ? 'bg-warn/10 border-warn/30 text-warn' : 'bg-crit/10 border-crit/30 text-crit';
 }
+
+// Health is decided here — deterministically, from load vs. the configured thresholds.
+// An asset is judged on its worst case: current load or predicted load, whichever is higher.
+function loadStatus(loadPct: number, s: Settings): Status {
+  return loadPct >= s.critThreshold ? 'crit' : loadPct >= s.warnThreshold ? 'warn' : 'ok';
+}
+function assetStatus(asset: Asset, s: Settings): Status {
+  return loadStatus(Math.max(asset.load, asset.predictedLoad ?? 0), s);
+}
+function assetsWithStatus(assets: Asset[], s: Settings): Asset[] {
+  return assets.map(a => ({ ...a, status: assetStatus(a, s) }));
+}
+function zonesWithStatus(zones: Zone[], s: Settings): Zone[] {
+  return zones.map(z => ({ ...z, assets: assetsWithStatus(z.assets, s) }));
+}
+
+const PAGE_TITLES: Record<Page, string> = {
+  overview: 'GLOBAL UTILITY OPERATIONS DASHBOARD',
+  'grid-tree': 'GRID TOPOLOGY — NORTHEAST REGION',
+  assets: 'ASSET REGISTRY',
+  alerts: 'ALERTS & INCIDENTS',
+  reporting: 'OPERATIONAL REPORTING',
+  settings: 'SETTINGS & THRESHOLDS',
+};
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
@@ -86,7 +260,8 @@ function StatusBadge({ status }: { status: Status }) {
 
 // Load bar
 function LoadBar({ value, predicted }: { value: number; predicted?: number | null }) {
-  const color = value >= 90 ? '#ef4444' : value >= 80 ? '#f0a92e' : '#21d07a';
+  const settings = useSettings();
+  const color = statusColor(loadStatus(value, settings));
   return (
     <div className="w-full">
       <div className="flex justify-between text-[10px] mb-1">
@@ -108,7 +283,9 @@ function LoadBar({ value, predicted }: { value: number; predicted?: number | nul
 
 // ── Overview Page ──────────────────────────────────────────────────────────
 function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
-  const allAssets = INITIAL_ZONES.flatMap(z => z.assets);
+  const settings = useSettings();
+  const zones = zonesWithStatus(INITIAL_ZONES, settings);
+  const allAssets = zones.flatMap(z => z.assets);
   const critCount = allAssets.filter(a => a.status === 'crit').length;
   const warnCount = allAssets.filter(a => a.status === 'warn').length;
 
@@ -153,9 +330,9 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             ))}
           </div>
           <div className="mt-auto bg-base/90 backdrop-blur border border-line p-3 rounded-lg flex flex-col gap-2 font-mono text-[10px] text-ink/80">
-            <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-ok rounded" /> Normal (&lt;80% Load)</span>
-            <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-warn rounded" /> Warning (80-90%)</span>
-            <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-crit rounded" /> Critical Risk (&gt;90%)</span>
+            <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-ok rounded" /> Normal (&lt;{settings.warnThreshold}% Load)</span>
+            <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-warn rounded" /> Warning ({settings.warnThreshold}-{settings.critThreshold}%)</span>
+            <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-crit rounded" /> Critical Risk (&gt;{settings.critThreshold}%)</span>
           </div>
         </div>
 
@@ -175,7 +352,7 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 </div>
                 <ul className="ml-6 mt-3 space-y-3 relative">
                   <div className="tree-line-v h-full" />
-                  {INITIAL_ZONES.map(zone => (
+                  {zones.map(zone => (
                     <li key={zone.id} className="relative pl-6">
                       <div className="tree-line-h" />
                       <div className="flex items-center gap-2 bg-panel border border-line px-3 py-1.5 rounded-lg inline-flex shadow-sm">
@@ -256,7 +433,7 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 <span className="text-sm font-semibold text-crit flex items-center gap-1">PREDICTED OVERLOAD — 96% <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15"/></svg></span>
               </div>
             </div>
-            <span className="h-2 w-2 rounded-full bg-crit animate-pulse mt-1 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+            <span className="h-2 w-2 rounded-full bg-crit mt-1 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse" />
           </div>
           <div className="flex flex-col lg:flex-row gap-6 mt-2 flex-1">
             <div className="flex-1 bg-raised/50 rounded-lg p-4 border border-line flex flex-col justify-between">
@@ -297,15 +474,20 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
 // ── Grid Tree Page ─────────────────────────────────────────────────────────
 function GridTreePage({ onSelectAsset }: { onSelectAsset: (id: string) => void }) {
-  const [zones, setZones] = useState<Zone[]>(INITIAL_ZONES);
-  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const settings = useSettings();
+  const [zoneState, setZoneState] = useState<Zone[]>(INITIAL_ZONES);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Statuses are recomputed on every render so threshold changes apply immediately.
+  const zones = zonesWithStatus(zoneState, settings);
+  const selectedAsset = zones.flatMap(z => z.assets).find(a => a.id === selectedId) ?? null;
 
   function toggleZone(zoneId: string) {
-    setZones(prev => prev.map(z => z.id === zoneId ? { ...z, expanded: !z.expanded } : z));
+    setZoneState(prev => prev.map(z => z.id === zoneId ? { ...z, expanded: !z.expanded } : z));
   }
 
   function selectAsset(asset: Asset) {
-    setSelectedAsset(prev => prev?.id === asset.id ? null : asset);
+    setSelectedId(prev => prev === asset.id ? null : asset.id);
   }
 
   return (
@@ -424,7 +606,7 @@ function GridTreePage({ onSelectAsset }: { onSelectAsset: (id: string) => void }
               {[
                 { label: 'Voltage', val: `${selectedAsset.voltage} kV` },
                 { label: 'Current', val: `${selectedAsset.current} A` },
-                { label: 'Temp', val: `${selectedAsset.tempC} °C`, alert: selectedAsset.tempC > 70 },
+                { label: 'Temp', val: `${selectedAsset.tempC} °C`, alert: selectedAsset.tempC >= settings.tempThreshold },
                 { label: 'Zone', val: selectedAsset.zone },
               ].map(m => (
                 <div key={m.label} className="bg-raised/50 border border-white/5 rounded-lg p-3">
@@ -476,12 +658,13 @@ function GridTreePage({ onSelectAsset }: { onSelectAsset: (id: string) => void }
 
 // ── Assets Page ────────────────────────────────────────────────────────────
 function AssetsPage({ initialSelected }: { initialSelected?: string }) {
-  const allAssets = INITIAL_ZONES.flatMap(z => z.assets);
-  const [selected, setSelected] = useState<Asset | null>(
-    initialSelected ? allAssets.find(a => a.id === initialSelected) ?? null : null
-  );
+  const settings = useSettings();
+  const allAssets = assetsWithStatus(INITIAL_ZONES.flatMap(z => z.assets), settings);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelected ?? null);
   const [filter, setFilter] = useState<Status | 'all'>('all');
   const [search, setSearch] = useState('');
+
+  const selected = allAssets.find(a => a.id === selectedId) ?? null;
 
   const filtered = allAssets.filter(a => {
     if (filter !== 'all' && a.status !== filter) return false;
@@ -540,7 +723,7 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
             {filtered.map(asset => (
               <button
                 key={asset.id}
-                onClick={() => setSelected(prev => prev?.id === asset.id ? null : asset)}
+                onClick={() => setSelectedId(prev => prev === asset.id ? null : asset.id)}
                 className={`w-full grid grid-cols-[1fr_1fr_2fr_1fr_1fr_1fr_1fr] gap-3 px-4 py-3 text-left transition-all duration-200 hover:bg-white/[0.03] ${selected?.id === asset.id ? 'bg-white/[0.05] border-l-2 border-ok' : ''}`}
               >
                 <span className={`font-mono font-bold text-sm ${asset.status === 'crit' ? 'text-crit' : 'text-white'}`}>{asset.id}</span>
@@ -549,7 +732,7 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
                   <LoadBar value={asset.load} />
                 </div>
                 <span className="font-mono text-[12px] text-ink/80">{asset.voltage} kV</span>
-                <span className={`font-mono text-[12px] ${asset.tempC > 70 ? 'text-warn' : 'text-ink/80'}`}>{asset.tempC}°C</span>
+                <span className={`font-mono text-[12px] ${asset.tempC >= settings.tempThreshold ? 'text-warn' : 'text-ink/80'}`}>{asset.tempC}°C</span>
                 <StatusBadge status={asset.status} />
                 <span className="font-mono text-[11px] text-ink/40">{asset.lastUpdated}</span>
               </button>
@@ -579,8 +762,8 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
               {[
                 { label: 'Voltage', val: `${selected.voltage} kV`, icon: '⚡' },
                 { label: 'Current', val: `${selected.current} A`, icon: '〜' },
-                { label: 'Temperature', val: `${selected.tempC} °C`, icon: '🌡', alert: selected.tempC > 70 },
-                { label: 'Pred. Load', val: `${selected.predictedLoad}%`, icon: '↑', alert: (selected.predictedLoad ?? 0) >= 90 },
+                { label: 'Temperature', val: `${selected.tempC} °C`, icon: '🌡', alert: selected.tempC >= settings.tempThreshold },
+                { label: 'Pred. Load', val: `${selected.predictedLoad}%`, icon: '↑', alert: (selected.predictedLoad ?? 0) >= settings.critThreshold },
               ].map(m => (
                 <div key={m.label} className={`bg-raised/50 border rounded-lg p-3 ${m.alert ? 'border-warn/30' : 'border-white/5'}`}>
                   <p className="text-[10px] text-ink/50 font-mono uppercase">{m.label}</p>
@@ -630,7 +813,7 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
                   <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-crit font-bold">Operator Brief</p>
                 </div>
                 <p className="text-[11px] text-ink/80 leading-relaxed">
-                  T-104 is projecting <strong className="text-crit">96%</strong> load within 28 minutes. Oil temperature at <strong className="text-warn">{selected.tempC}°C</strong> and rising. Immediate load-shedding recommended.
+                  {selected.id} is projecting <strong className="text-crit">{selected.predictedLoad}%</strong> load, above the {settings.critThreshold}% critical threshold. Oil temperature at <strong className="text-warn">{selected.tempC}°C</strong>. Immediate load-shedding recommended.
                 </p>
               </div>
             )}
@@ -643,6 +826,614 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
             <p className="text-sm text-ink/40">Select an asset from the table to view details</p>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Alerts Page ───────────────────────────────────────────────────────────
+function AlertsPage({ onGoToAsset }: { onGoToAsset: (id: string) => void }) {
+  const [alerts, setAlerts] = useState<AlertItem[]>(ALERTS);
+  const [filterSev, setFilterSev] = useState<AlertSeverity | 'all'>('all');
+  const [filterState, setFilterState] = useState<AlertState | 'all'>('active');
+  const [selected, setSelected] = useState<AlertItem | null>(alerts.find(a => a.severity === 'critical' && a.state === 'active') ?? null);
+
+  function acknowledge(id: string) {
+    setAlerts(prev => prev.map(a => a.id === id ? { ...a, state: 'acknowledged' as AlertState, ackBy: CURRENT_OPERATOR.name } : a));
+    setSelected(prev => prev?.id === id ? { ...prev, state: 'acknowledged', ackBy: CURRENT_OPERATOR.name } : prev);
+  }
+  function resolve(id: string) {
+    setAlerts(prev => prev.map(a => a.id === id ? { ...a, state: 'resolved' as AlertState } : a));
+    setSelected(prev => prev?.id === id ? { ...prev, state: 'resolved' } : prev);
+  }
+
+  const sevColor = (s: AlertSeverity) => s === 'critical' ? { bg: 'bg-crit/10', border: 'border-crit/30', text: 'text-crit', dot: 'bg-crit' } : s === 'warning' ? { bg: 'bg-warn/10', border: 'border-warn/30', text: 'text-warn', dot: 'bg-warn' } : { bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400', dot: 'bg-blue-400' };
+  const stateColor = (s: AlertState) => s === 'active' ? 'text-crit' : s === 'acknowledged' ? 'text-warn' : 'text-ok';
+
+  const filtered = alerts.filter(a => {
+    if (filterSev !== 'all' && a.severity !== filterSev) return false;
+    if (filterState !== 'all' && a.state !== filterState) return false;
+    return true;
+  });
+
+  const activeCount  = alerts.filter(a => a.state === 'active').length;
+  const critCount    = alerts.filter(a => a.severity === 'critical' && a.state === 'active').length;
+  const warnCount    = alerts.filter(a => a.severity === 'warning'  && a.state === 'active').length;
+
+  return (
+    <div className="p-6 flex gap-6 h-full overflow-hidden">
+      {/* List */}
+      <div className="flex-1 flex flex-col gap-4 min-w-0 overflow-y-auto">
+        {/* KPIs */}
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: 'Active Alerts',  value: activeCount, color: 'text-crit', glow: 'shadow-[0_0_16px_rgba(239,68,68,0.12)]' },
+            { label: 'Critical',       value: critCount,   color: 'text-crit',  glow: '' },
+            { label: 'Warnings',       value: warnCount,   color: 'text-warn',  glow: '' },
+          ].map(k => (
+            <div key={k.label} className={`glass-panel rounded-xl p-4 flex flex-col gap-1 ${k.glow}`}>
+              <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink/50">{k.label}</p>
+              <p className={`text-3xl font-extrabold ${k.color}`}>{k.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="font-mono text-[10px] uppercase text-ink/40 mr-1">Severity:</span>
+          {(['all','critical','warning','info'] as const).map(f => (
+            <button key={f} onClick={() => setFilterSev(f)}
+              className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-colors ${
+                filterSev === f
+                  ? f === 'all' ? 'bg-white/10 border-white/20 text-white'
+                    : f === 'critical' ? 'bg-crit/20 border-crit/40 text-crit'
+                    : f === 'warning' ? 'bg-warn/20 border-warn/40 text-warn'
+                    : 'bg-blue-500/20 border-blue-500/40 text-blue-400'
+                  : 'bg-transparent border-white/5 text-ink/40 hover:text-ink/80 hover:border-white/15'
+              }`}>{f === 'all' ? 'All' : f}</button>
+          ))}
+          <span className="font-mono text-[10px] uppercase text-ink/40 ml-3 mr-1">State:</span>
+          {(['all','active','acknowledged','resolved'] as const).map(f => (
+            <button key={f} onClick={() => setFilterState(f)}
+              className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-colors ${
+                filterState === f ? 'bg-white/10 border-white/20 text-white' : 'bg-transparent border-white/5 text-ink/40 hover:text-ink/80 hover:border-white/15'
+              }`}>{f}</button>
+          ))}
+        </div>
+
+        {/* Alert list */}
+        <div className="flex flex-col gap-2">
+          {filtered.length === 0 && (
+            <div className="rounded-xl border border-white/5 bg-panel/40 p-10 flex flex-col items-center gap-3">
+              <svg viewBox="0 0 24 24" className="h-8 w-8 text-ok/40" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg>
+              <p className="text-sm text-ink/40">No alerts match the current filter</p>
+            </div>
+          )}
+          {filtered.map(alert => {
+            const c = sevColor(alert.severity);
+            const isSelected = selected?.id === alert.id;
+            return (
+              <button
+                key={alert.id}
+                onClick={() => setSelected(prev => prev?.id === alert.id ? null : alert)}
+                className={`w-full text-left rounded-xl border p-4 transition-all duration-200 ${isSelected ? `${c.bg} ${c.border}` : 'bg-panel/40 border-white/5 hover:border-white/15 hover:bg-panel/60'} ${alert.state === 'resolved' ? 'opacity-60' : ''}`}
+              >
+                <div className="flex items-start gap-3">
+                  <span className={`h-2.5 w-2.5 rounded-full flex-shrink-0 mt-1 ${c.dot} ${alert.severity === 'critical' && alert.state === 'active' ? 'shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse' : ''}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`font-mono text-[10px] font-bold uppercase ${c.text}`}>{alert.severity}</span>
+                      <span className="font-mono text-[10px] text-ink/30">#{alert.id}</span>
+                      <span className="font-mono text-[10px] text-ink/30">·</span>
+                      <span className="font-mono text-[10px] text-ink/50">{alert.assetId} · {alert.zone}</span>
+                      <span className="ml-auto font-mono text-[10px] text-ink/30">{alert.timestamp}</span>
+                    </div>
+                    <p className="text-sm font-semibold text-white mt-1">{alert.title}</p>
+                    <p className="text-[12px] text-ink/60 mt-0.5 truncate">{alert.detail}</p>
+                  </div>
+                  <div className="flex-shrink-0">
+                    <span className={`text-[10px] font-mono font-bold uppercase ${stateColor(alert.state)}`}>{alert.state}</span>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Detail panel */}
+      <div className="w-80 flex-shrink-0 overflow-y-auto">
+        {selected ? (() => {
+          const c = sevColor(selected.severity);
+          return (
+            <div className={`rounded-xl border p-5 flex flex-col gap-4 sticky top-0 ${c.bg} ${c.border}`}>
+              {selected.severity === 'critical' && <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-warn to-crit rounded-t-xl" />}
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-[10px] font-mono font-bold uppercase ${c.text}`}>{selected.severity}</span>
+                  <span className="font-mono text-[10px] text-ink/30">· #{selected.id}</span>
+                  <span className={`ml-auto text-[10px] font-mono font-bold uppercase ${stateColor(selected.state)}`}>{selected.state}</span>
+                </div>
+                <h3 className="text-lg font-extrabold text-white leading-tight">{selected.title}</h3>
+                <p className="text-[12px] text-ink/60 mt-0.5">{selected.assetId} · {selected.zone} · {selected.timestamp}</p>
+              </div>
+
+              <div className={`rounded-lg border p-3 ${c.bg} ${c.border}`}>
+                <p className={`text-[11px] font-mono uppercase font-bold mb-1.5 ${c.text}`}>Detail</p>
+                <p className="text-[13px] text-ink/90 leading-relaxed">{selected.detail}</p>
+              </div>
+
+              {selected.ackBy && (
+                <div className="bg-white/5 border border-white/10 rounded-lg p-3">
+                  <p className="text-[10px] font-mono uppercase text-ink/40 mb-1">Acknowledged by</p>
+                  <p className="text-sm font-semibold text-white">{selected.ackBy}</p>
+                </div>
+              )}
+
+              {/* Timeline */}
+              <div className="bg-raised/30 border border-white/5 rounded-lg p-3">
+                <p className="text-[10px] font-mono uppercase text-ink/40 mb-2">Timeline</p>
+                <div className="space-y-2">
+                  {([
+                    { t: selected.timestamp, label: 'Alert raised', done: true },
+                    { t: selected.ackBy ? selected.timestamp : '—', label: 'Acknowledged', done: !!selected.ackBy },
+                    { t: selected.state === 'resolved' ? selected.timestamp : '—', label: 'Resolved', done: selected.state === 'resolved' },
+                  ]).map((step, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className={`h-2 w-2 rounded-full flex-shrink-0 ${step.done ? c.dot : 'bg-white/10'}`} />
+                      <span className="text-[11px] text-ink/60">{step.label}</span>
+                      <span className="ml-auto font-mono text-[10px] text-ink/30">{step.t}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col gap-2">
+                <button onClick={() => onGoToAsset(selected.assetId)}
+                  className="w-full py-2 rounded-lg border border-white/10 text-sm text-ink/80 hover:bg-white/10 hover:text-white transition-colors">View Asset →</button>
+                {selected.state === 'active' && (
+                  <button onClick={() => acknowledge(selected.id)}
+                    className={`w-full py-2 rounded-lg border text-sm font-semibold transition-colors ${c.border} ${c.text} hover:${c.bg}`}>Acknowledge</button>
+                )}
+                {selected.state !== 'resolved' && (
+                  <button onClick={() => resolve(selected.id)}
+                    className="w-full py-2 rounded-lg border border-ok/30 text-sm font-semibold text-ok hover:bg-ok/10 transition-colors">Mark Resolved</button>
+                )}
+              </div>
+            </div>
+          );
+        })() : (
+          <div className="rounded-xl border border-white/5 bg-panel/30 p-8 flex flex-col items-center justify-center gap-3 text-center">
+            <svg viewBox="0 0 24 24" className="h-8 w-8 text-ink/20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <p className="text-sm text-ink/40">Select an alert to view details</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Reporting Page ─────────────────────────────────────────────────────────
+function ReportingPage() {
+  const settings = useSettings();
+  const [activeTab, setActiveTab] = useState<'summary' | 'load' | 'export'>('summary');
+
+  const maxLoad = Math.max(...LOAD_24H.map(d => d.v));
+
+  return (
+    <div className="p-6 flex flex-col gap-6 h-full overflow-y-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-white">Operational Report</h2>
+          <p className="text-[12px] text-ink/50 font-mono mt-0.5">Northeast Region · Generated {new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })} 14:05 UTC</p>
+        </div>
+        <div className="flex gap-2">
+          {(['summary','load','export'] as const).map(t => (
+            <button key={t} onClick={() => setActiveTab(t)}
+              className={`px-4 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider border transition-colors ${
+                activeTab === t ? 'bg-white/10 border-white/20 text-white' : 'bg-transparent border-white/5 text-ink/50 hover:text-ink/80 hover:border-white/15'
+              }`}>{t === 'export' ? 'Export' : t === 'load' ? 'Load Chart' : 'Summary'}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Summary tab */}
+      {activeTab === 'summary' && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          {REPORT_SECTIONS.map(section => (
+            <div key={section.title} className="glass-panel rounded-xl p-5 flex flex-col gap-3 hover:-translate-y-0.5 transition-all duration-300">
+              <h3 className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink/60 border-b border-white/5 pb-2">{section.title}</h3>
+              <div className="divide-y divide-white/[0.04]">
+                {section.rows.map(row => (
+                  <div key={row.label} className="flex items-center justify-between py-2.5">
+                    <span className="text-[13px] text-ink/80">{row.label}</span>
+                    <div className="flex items-center gap-2">
+                      {row.trend && (
+                        <svg viewBox="0 0 24 24" className={`h-3 w-3 ${
+                          row.good ? 'text-ok' : 'text-crit'
+                        } ${row.trend === 'down' ? 'rotate-180' : row.trend === 'flat' ? 'rotate-90' : ''}`}
+                          fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <polyline points="18 15 12 9 6 15" />
+                        </svg>
+                      )}
+                      <span className={`font-mono text-sm font-bold ${
+                        row.good === false ? 'text-warn' : row.good === true ? 'text-ok' : 'text-white'
+                      }`}>{row.value}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Load chart tab */}
+      {activeTab === 'load' && (
+        <div className="glass-panel rounded-xl p-6 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink/60">24-Hour Load Profile — Northeast Region Grid (% of rated capacity)</h3>
+            <div className="flex gap-3 font-mono text-[10px]">
+              <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-ok rounded" />Normal</span>
+              <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-warn rounded" />Warning</span>
+              <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-crit rounded" />Critical</span>
+            </div>
+          </div>
+
+          <div className="relative h-64 flex items-end gap-[0.8%] mt-2">
+            {/* Y axis */}
+            <div className="absolute left-0 top-0 bottom-0 w-8 flex flex-col justify-between text-[9px] font-mono text-ink/40 pb-5">
+              {[100,80,60,40,20,0].map(v => <span key={v}>{v}</span>)}
+            </div>
+            {/* Grid lines */}
+            <div className="absolute inset-0 pl-8 flex flex-col justify-between pointer-events-none pb-5">
+              {[0,1,2,3,4,5].map(i => (
+                <div key={i} className={`w-full border-t ${
+                  i === 1 ? 'border-crit/25' : i === 2 ? 'border-warn/20' : 'border-white/[0.04]'
+                }`} />
+              ))}
+            </div>
+            {/* Bars */}
+            <div className="pl-9 flex-1 flex items-end gap-[0.8%] h-full pb-5">
+              {LOAD_24H.map((d, i) => {
+                const barStatus = loadStatus(d.v, settings);
+                const barColor = statusColor(barStatus);
+                const glow = barStatus === 'crit' ? '0 0 8px rgba(239,68,68,0.7)' : barStatus === 'warn' ? '0 0 8px rgba(240,169,46,0.5)' : '';
+                return (
+                  <div
+                    key={i}
+                    title={`${d.h}:00 — ${d.v}%`}
+                    className="flex-1 rounded-t transition-all duration-300 hover:opacity-80 cursor-pointer relative group"
+                    style={{ height: `${(d.v / 100) * 100}%`, backgroundColor: barColor, boxShadow: glow }}
+                  >
+                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-raised border border-white/10 rounded px-1.5 py-0.5 text-[9px] font-mono text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">{d.v}%</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {/* X axis */}
+          <div className="flex pl-9 gap-[0.8%] font-mono text-[9px] text-ink/30">
+            {LOAD_24H.map(d => <span key={d.h} className="flex-1 text-center">{d.h}</span>)}
+          </div>
+
+          {/* Stats row */}
+          <div className="grid grid-cols-4 gap-3 pt-2 border-t border-white/5">
+            {[
+              { label: 'Peak', value: `${maxLoad}%`, color: 'text-crit' },
+              { label: 'Average', value: `${Math.round(LOAD_24H.reduce((a,d)=>a+d.v,0)/LOAD_24H.length)}%`, color: 'text-warn' },
+              { label: 'Min', value: `${Math.min(...LOAD_24H.map(d=>d.v))}%`, color: 'text-ok' },
+              { label: `Hours >${settings.warnThreshold}%`, value: `${LOAD_24H.filter(d=>d.v>=settings.warnThreshold).length}h`, color: 'text-warn' },
+            ].map(s => (
+              <div key={s.label} className="bg-raised/40 border border-white/5 rounded-lg p-3 text-center">
+                <p className="text-[10px] font-mono text-ink/40 uppercase">{s.label}</p>
+                <p className={`text-xl font-extrabold mt-0.5 ${s.color}`}>{s.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Export tab */}
+      {activeTab === 'export' && (
+        <div className="glass-panel rounded-xl p-6 flex flex-col gap-5">
+          <h3 className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink/60">Export Reports</h3>
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            {[
+              { title: 'System Summary Report', desc: 'Full operational summary including load, asset health, alerts and line availability for the reporting period.', format: 'PDF', icon: '📄', size: '~420 KB' },
+              { title: 'Alert Log (CSV)', desc: 'All alerts with timestamps, severity, state, and resolution notes. Compatible with SCADA and ticketing systems.', format: 'CSV', icon: '📊', size: '~18 KB' },
+              { title: 'Telemetry Raw Data', desc: 'Minute-by-minute load, voltage, current, and temperature readings for all assets over the selected period.', format: 'JSON', icon: '🗂', size: '~2.1 MB' },
+            ].map(exp => (
+              <div key={exp.title} className="bg-raised/40 border border-white/5 rounded-xl p-5 flex flex-col gap-3 hover:border-white/15 transition-colors group">
+                <div className="flex items-start justify-between">
+                  <span className="text-2xl">{exp.icon}</span>
+                  <span className="font-mono text-[10px] bg-white/5 border border-white/10 rounded px-2 py-0.5 text-ink/60">{exp.format}</span>
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white">{exp.title}</h4>
+                  <p className="text-[12px] text-ink/50 mt-1 leading-relaxed">{exp.desc}</p>
+                </div>
+                <div className="flex items-center justify-between mt-auto pt-2 border-t border-white/5">
+                  <span className="font-mono text-[10px] text-ink/30">{exp.size}</span>
+                  <button className="flex items-center gap-1.5 text-[11px] font-bold text-ok hover:text-white transition-colors">
+                    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Date range picker (decorative) */}
+          <div className="bg-raised/30 border border-white/5 rounded-xl p-4 flex flex-wrap items-center gap-4">
+            <p className="font-mono text-[10px] uppercase text-ink/40">Report Period:</p>
+            {[['From', '2026-07-28'], ['To', '2026-07-29']].map(([label, val]) => (
+              <div key={label} className="flex items-center gap-2">
+                <span className="text-[11px] text-ink/50">{label}</span>
+                <div className="flex items-center gap-2 bg-raised border border-white/10 rounded-lg px-3 py-1.5">
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-ink/40" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  <span className="font-mono text-[12px] text-white">{val}</span>
+                </div>
+              </div>
+            ))}
+            <button className="ml-auto flex items-center gap-2 px-4 py-1.5 rounded-lg bg-ok/10 border border-ok/30 text-ok text-[11px] font-bold hover:bg-ok/20 transition-colors">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
+              Generate
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Settings Page ──────────────────────────────────────────────────────────
+function SettingsSection({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) {
+  return (
+    <div className="glass-panel rounded-xl p-5 flex flex-col gap-3">
+      <div className="border-b border-white/5 pb-2.5">
+        <h3 className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink/60">{title}</h3>
+        <p className="text-[12px] text-ink/40 mt-1 leading-relaxed">{desc}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Toggle({ label, desc, checked, onChange }: { label: string; desc: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="flex items-center gap-4 text-left w-full py-2 rounded-lg hover:bg-white/[0.03] px-1 transition-colors"
+    >
+      <span className={`relative h-5 w-9 rounded-full border transition-colors flex-shrink-0 ${checked ? 'bg-ok/25 border-ok/50' : 'bg-white/5 border-white/10'}`}>
+        <span className={`absolute top-[3px] h-3 w-3 rounded-full transition-all duration-200 ${checked ? 'left-[19px] bg-ok shadow-[0_0_8px_rgba(33,208,122,0.6)]' : 'left-[3px] bg-ink/40'}`} />
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-[13px] font-semibold text-white">{label}</span>
+        <span className="block text-[11px] text-ink/50 mt-0.5">{desc}</span>
+      </span>
+    </button>
+  );
+}
+
+function ThresholdField({
+  label, desc, value, unit, min, max, step, accent, disabled, onChange,
+}: {
+  label: string; desc: string; value: number; unit: string;
+  min: number; max: number; step?: number; accent: string;
+  disabled?: boolean; onChange: (v: number) => void;
+}) {
+  return (
+    <div className={`py-2${disabled ? ' opacity-40' : ''}`}>
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold text-white">{label}</p>
+          <p className="text-[11px] text-ink/50 mt-0.5">{desc}</p>
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <input
+            type="number"
+            min={min}
+            max={max}
+            step={step}
+            value={value}
+            disabled={disabled}
+            onChange={e => onChange(Number(e.target.value))}
+            aria-label={label}
+            className="w-16 bg-raised/60 border border-white/10 rounded-lg px-2 py-1 font-mono text-sm font-bold text-right text-white focus:outline-none focus:border-ok/40 disabled:cursor-not-allowed"
+          />
+          <span className="font-mono text-[11px] text-ink/40 w-8">{unit}</span>
+        </div>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={disabled}
+        onChange={e => onChange(Number(e.target.value))}
+        aria-label={`${label} slider`}
+        className="w-full mt-2.5 h-1 appearance-none rounded-full bg-white/10 cursor-pointer disabled:cursor-not-allowed"
+        style={{ accentColor: accent }}
+      />
+    </div>
+  );
+}
+
+function clamp(v: number, min: number, max: number) {
+  return Number.isNaN(v) ? min : Math.min(max, Math.max(min, v));
+}
+
+function SettingsPage({ settings, onChange, onReset }: {
+  settings: Settings;
+  onChange: (patch: Partial<Settings>) => void;
+  onReset: () => void;
+}) {
+  const assets = assetsWithStatus(INITIAL_ZONES.flatMap(z => z.assets), settings);
+  const counts = {
+    ok: assets.filter(a => a.status === 'ok').length,
+    warn: assets.filter(a => a.status === 'warn').length,
+    crit: assets.filter(a => a.status === 'crit').length,
+  };
+  const isDefault = (Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[])
+    .every(k => settings[k] === DEFAULT_SETTINGS[k]);
+
+  // Keep the two load thresholds ordered: warning must always sit below critical.
+  function setWarn(v: number) {
+    const warn = clamp(v, 1, 99);
+    onChange({ warnThreshold: warn, critThreshold: Math.max(settings.critThreshold, warn + 1) });
+  }
+  function setCrit(v: number) {
+    const crit = clamp(v, 2, 100);
+    onChange({ critThreshold: crit, warnThreshold: Math.min(settings.warnThreshold, crit - 1) });
+  }
+
+  return (
+    <div className="p-6 flex flex-col gap-6 h-full overflow-y-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-lg font-bold text-white">Settings</h2>
+          <p className="text-[12px] text-ink/50 font-mono mt-0.5">
+            Applied immediately · saved in this browser
+          </p>
+        </div>
+        <button
+          onClick={onReset}
+          disabled={isDefault}
+          className="flex items-center gap-2 px-4 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-wider transition-colors border-white/10 text-ink/70 hover:bg-white/10 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-ink/70 disabled:cursor-not-allowed"
+        >
+          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.36 2.64L3 8"/><path d="M3 3v5h5"/></svg>
+          {isDefault ? 'Defaults Active' : 'Reset to Defaults'}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        {/* Thresholds */}
+        <SettingsSection
+          title="Alert Thresholds"
+          desc="Drives the deterministic health classification across every page. An asset is judged on the higher of its current and predicted load."
+        >
+          <ThresholdField
+            label="Warning Load"
+            desc="At or above this load, an asset is flagged Warning."
+            value={settings.warnThreshold}
+            unit="%"
+            min={1}
+            max={99}
+            accent="#f0a92e"
+            onChange={setWarn}
+          />
+          <ThresholdField
+            label="Critical Load"
+            desc="At or above this load, an asset is flagged Critical."
+            value={settings.critThreshold}
+            unit="%"
+            min={2}
+            max={100}
+            accent="#ef4444"
+            onChange={setCrit}
+          />
+          <ThresholdField
+            label="Temperature Warning"
+            desc="Oil temperature at or above this value is highlighted in asset details."
+            value={settings.tempThreshold}
+            unit="°C"
+            min={30}
+            max={120}
+            accent="#f0a92e"
+            onChange={v => onChange({ tempThreshold: clamp(v, 30, 120) })}
+          />
+
+          {/* Live impact of the current thresholds */}
+          <div className="mt-1 rounded-lg border border-white/5 bg-raised/40 p-3">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-ink/40 mb-2">
+              Classification at these thresholds
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                ['ok', counts.ok],
+                ['warn', counts.warn],
+                ['crit', counts.crit],
+              ] as [Status, number][]).map(([s, n]) => (
+                <div key={s} className={`rounded-lg border px-2 py-2 text-center ${statusBg(s)}`}>
+                  <p className="text-xl font-extrabold leading-none">{n}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mt-1">{statusLabel(s)}</p>
+                </div>
+              ))}
+            </div>
+            <p className="text-[10px] text-ink/40 mt-2 font-mono">of {assets.length} monitored assets</p>
+          </div>
+        </SettingsSection>
+
+        {/* Security */}
+        <SettingsSection
+          title="Security"
+          desc="Protects an unattended workstation. The inactivity timer runs in this browser and ends the operator's session locally."
+        >
+          <Toggle
+            label="Session timeout"
+            desc="Automatically log out after a period of inactivity."
+            checked={settings.autoLogout}
+            onChange={v => onChange({ autoLogout: v })}
+          />
+          <ThresholdField
+            label="Log out after"
+            desc="Idle time before the session ends. Mouse, keyboard, scroll and touch activity reset the timer."
+            value={settings.autoLogoutMinutes}
+            unit="min"
+            min={MIN_LOGOUT_MINUTES}
+            max={MAX_LOGOUT_MINUTES}
+            step={5}
+            accent="#21d07a"
+            disabled={!settings.autoLogout}
+            onChange={v => onChange({
+              autoLogoutMinutes: clamp(v, MIN_LOGOUT_MINUTES, MAX_LOGOUT_MINUTES),
+            })}
+          />
+
+          <div className="mt-1 rounded-lg border border-white/5 bg-raised/40 p-3">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-ink/40 mb-1.5">
+              Current policy
+            </p>
+            <p className="text-[12px] text-ink/70 leading-relaxed">
+              {settings.autoLogout
+                ? `This session ends after ${settings.autoLogoutMinutes} minutes without operator activity.`
+                : 'This session stays open until the operator logs out manually.'}
+            </p>
+          </div>
+        </SettingsSection>
+
+        {/* System info — read only */}
+        <SettingsSection
+          title="System"
+          desc="Read-only build and data-source information."
+        >
+          <div className="divide-y divide-white/[0.04]">
+            {[
+              { label: 'Telemetry source', value: 'Simulated feed' },
+              { label: 'Prediction engine', value: 'Deterministic (moving average)' },
+              { label: 'Region', value: 'Northeast' },
+              { label: 'Settings storage', value: 'Browser local storage' },
+            ].map(row => (
+              <div key={row.label} className="flex items-center justify-between py-2.5 gap-3">
+                <span className="text-[13px] text-ink/80">{row.label}</span>
+                <span className="font-mono text-[12px] text-white text-right">{row.value}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-ink/40 leading-relaxed mt-1">
+            Settings are stored locally in this browser only. Server-side operator preferences
+            arrive with the authentication milestone.
+          </p>
+        </SettingsSection>
       </div>
     </div>
   );
@@ -675,21 +1466,51 @@ function NavItem({
 
 // ── Main Dashboard ─────────────────────────────────────────────────────────
 export function Dashboard() {
+  const navigate = useNavigate();
   const [page, setPage] = useState<Page>('overview');
   const [selectedAssetId, setSelectedAssetId] = useState<string | undefined>();
+  const [settings, setSettings] = useState<Settings>(loadSettings);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    } catch {
+      // Storage unavailable (private mode / quota) — settings stay in memory for this session.
+    }
+  }, [settings]);
+
+  const logOut = useCallback(() => navigate('/', { replace: true }), [navigate]);
+
+  // Inactivity timeout. This is a client-side guard for an unattended screen: it
+  // leaves the dashboard, it does not revoke a server session. Real session
+  // expiry belongs to Supabase Auth in the authentication milestone.
+  useEffect(() => {
+    if (!settings.autoLogout) return;
+
+    const idleMs = settings.autoLogoutMinutes * 60_000;
+    const activity = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart', 'scroll'] as const;
+    let timer = 0;
+
+    function restart() {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(logOut, idleMs);
+    }
+
+    restart();
+    activity.forEach(e => window.addEventListener(e, restart, { passive: true }));
+    return () => {
+      window.clearTimeout(timer);
+      activity.forEach(e => window.removeEventListener(e, restart));
+    };
+  }, [settings.autoLogout, settings.autoLogoutMinutes, logOut]);
 
   function goToAsset(id: string) {
     setSelectedAssetId(id);
     setPage('assets');
   }
 
-  const pageTitle: Record<Page, string> = {
-    overview: 'GLOBAL UTILITY OPERATIONS DASHBOARD',
-    'grid-tree': 'GRID TOPOLOGY — NORTHEAST REGION',
-    assets: 'ASSET REGISTRY',
-  };
-
   return (
+    <SettingsContext.Provider value={settings}>
     <div className="dark scroll-smooth font-sans text-ink antialiased h-screen w-screen overflow-hidden flex bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-panel/40 via-base to-[#04060a]">
 
       {/* ══════════════════ SIDEBAR ══════════════════ */}
@@ -729,23 +1550,23 @@ export function Dashboard() {
             icon={<svg viewBox="0 0 24 24" className={`h-5 w-5 ${page === 'assets' ? 'text-ok' : 'opacity-70'}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>}
           />
           <NavItem
-            active={false}
-            onClick={() => {}}
+            active={page === 'alerts'}
+            onClick={() => setPage('alerts')}
             label="Alerts"
-            badge={<span className="rounded bg-warn/20 px-1.5 py-0.5 font-mono text-[10px] font-bold text-warn leading-none border border-warn/30 shadow-[0_0_8px_rgba(240,169,46,0.3)]">6</span>}
-            icon={<svg viewBox="0 0 24 24" className="h-5 w-5 opacity-70" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
+            badge={<span className="rounded bg-warn/20 px-1.5 py-0.5 font-mono text-[10px] font-bold text-warn leading-none border border-warn/30 shadow-[0_0_8px_rgba(240,169,46,0.3)]">{ALERTS.filter(a => a.state === 'active').length}</span>}
+            icon={<svg viewBox="0 0 24 24" className={`h-5 w-5 ${page === 'alerts' ? 'text-ok' : 'opacity-70'}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
           />
           <NavItem
-            active={false}
-            onClick={() => {}}
+            active={page === 'reporting'}
+            onClick={() => setPage('reporting')}
             label="Reporting"
-            icon={<svg viewBox="0 0 24 24" className="h-5 w-5 opacity-70" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>}
+            icon={<svg viewBox="0 0 24 24" className={`h-5 w-5 ${page === 'reporting' ? 'text-ok' : 'opacity-70'}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>}
           />
           <NavItem
-            active={false}
-            onClick={() => {}}
+            active={page === 'settings'}
+            onClick={() => setPage('settings')}
             label="Settings"
-            icon={<svg viewBox="0 0 24 24" className="h-5 w-5 opacity-70 mt-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>}
+            icon={<svg viewBox="0 0 24 24" className={`h-5 w-5 ${page === 'settings' ? 'text-ok' : 'opacity-70'}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>}
           />
         </nav>
 
@@ -757,13 +1578,16 @@ export function Dashboard() {
                 <svg viewBox="0 0 24 24" className="h-4 w-4 text-ink/80" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-white truncate">A. Petrov</p>
+                <p className="text-sm font-semibold text-white truncate">{CURRENT_OPERATOR.name}</p>
                 <p className="text-[11px] text-ink/70 truncate flex items-center gap-1.5">
-                  Operator · <span className="text-ok drop-shadow-[0_0_5px_rgba(33,208,122,0.5)]">Online</span>
+                  {CURRENT_OPERATOR.role} · <span className="text-ok drop-shadow-[0_0_5px_rgba(33,208,122,0.5)]">Online</span>
                 </p>
               </div>
             </div>
-            <button className="w-full flex justify-center items-center gap-2 py-1.5 text-xs text-ink/80 hover:text-white hover:bg-white/10 rounded-md transition-colors border border-transparent hover:border-white/10">
+            <button
+              onClick={logOut}
+              className="w-full flex justify-center items-center gap-2 py-1.5 text-xs text-ink/80 hover:text-white hover:bg-white/10 rounded-md transition-colors border border-transparent hover:border-white/10"
+            >
               <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
               Log Out
             </button>
@@ -781,7 +1605,7 @@ export function Dashboard() {
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
               </button>
             )}
-            <h1 className="text-sm font-bold uppercase tracking-[0.12em] text-white">{pageTitle[page]}</h1>
+            <h1 className="text-sm font-bold uppercase tracking-[0.12em] text-white">{PAGE_TITLES[page]}</h1>
           </div>
           <div className="flex items-center gap-3">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-ok/30 bg-ok/10 px-3 py-1 font-mono text-[10px] uppercase tracking-wide text-ok shadow-[0_0_12px_rgba(33,208,122,0.2)]">
@@ -796,11 +1620,21 @@ export function Dashboard() {
 
         {/* Page content */}
         <div className="flex-1 overflow-hidden">
-          {page === 'overview' && <div className="h-full overflow-y-auto"><OverviewPage onNavigate={(p) => { setSelectedAssetId(undefined); setPage(p); }} /></div>}
-          {page === 'grid-tree' && <GridTreePage onSelectAsset={goToAsset} />}
-          {page === 'assets' && <AssetsPage initialSelected={selectedAssetId} />}
+          {page === 'overview'   && <div className="h-full overflow-y-auto"><OverviewPage onNavigate={(p) => { setSelectedAssetId(undefined); setPage(p); }} /></div>}
+          {page === 'grid-tree'  && <GridTreePage onSelectAsset={goToAsset} />}
+          {page === 'assets'     && <AssetsPage initialSelected={selectedAssetId} />}
+          {page === 'alerts'     && <AlertsPage onGoToAsset={goToAsset} />}
+          {page === 'reporting'  && <div className="h-full overflow-y-auto"><ReportingPage /></div>}
+          {page === 'settings'   && (
+            <SettingsPage
+              settings={settings}
+              onChange={patch => setSettings(prev => ({ ...prev, ...patch }))}
+              onReset={() => setSettings(DEFAULT_SETTINGS)}
+            />
+          )}
         </div>
       </main>
     </div>
+    </SettingsContext.Provider>
   );
 }
