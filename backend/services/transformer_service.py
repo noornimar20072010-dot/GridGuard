@@ -1,71 +1,105 @@
-"""Temporary mock data layer for the transformer API routes.
+"""Transformer API service layer — queries live data from the database."""
 
-TODO(Member 4): replace this with real queries against services/generator.py
-(telemetry) and services/predictor.py (predicted_load, health_status) once
-those land. The function signatures below are the contract the routes rely
-on — keep them stable when swapping in the real implementation.
-"""
+from sqlalchemy.orm import Session
 
-from datetime import datetime, timedelta, timezone
-
+from database.session import SessionLocal
+from models.telemetry import Telemetry
+from models.transformer import Transformer
 from schemas.telemetry import TelemetryRead
 from schemas.transformer import TransformerRead
-
-_MOCK_TRANSFORMERS: dict[str, dict] = {
-    "T-101": {"zone": "Zone A", "current_load": 62.0, "predicted_load": 68.0, "health_status": "healthy"},
-    "T-102": {"zone": "Zone A", "current_load": 81.0, "predicted_load": 89.0, "health_status": "warning"},
-    "T-103": {"zone": "Zone A", "current_load": 45.0, "predicted_load": 47.0, "health_status": "healthy"},
-    "T-201": {"zone": "Zone B", "current_load": 94.0, "predicted_load": 102.0, "health_status": "critical"},
-    "T-202": {"zone": "Zone B", "current_load": 58.0, "predicted_load": 60.0, "health_status": "healthy"},
-}
-
-
-def _to_transformer_read(transformer_id: str, data: dict) -> TransformerRead:
-    return TransformerRead(
-        id=transformer_id,
-        zone=data["zone"],
-        current_load=data["current_load"],
-        predicted_load=data["predicted_load"],
-        voltage=round(230 - data["current_load"] * 0.1, 1),
-        current=round(data["current_load"] * 1.8, 1),
-        temperature=round(40 + data["current_load"] * 0.3, 1),
-        health_status=data["health_status"],
-        last_updated=datetime.now(timezone.utc),
-    )
+from services.predictor import get_recent_telemetry, forecast_load
 
 
 def list_transformers() -> list[TransformerRead]:
-    return [_to_transformer_read(tid, data) for tid, data in _MOCK_TRANSFORMERS.items()]
+    """List all transformers with live predictions."""
+    db = SessionLocal()
+    try:
+        transformers = db.query(Transformer).all()
+        result = []
+        for transformer in transformers:
+            telemetry_history = get_recent_telemetry(db, transformer.id)
+            if not telemetry_history:
+                continue
+
+            forecast = forecast_load(telemetry_history)
+            latest = telemetry_history[-1]
+
+            result.append(
+                TransformerRead(
+                    id=transformer.id,
+                    zone=transformer.zone,
+                    current_load=forecast.current_load,
+                    predicted_load=forecast.predicted_load,
+                    voltage=round(latest.voltage, 2),
+                    current=round(latest.current, 2),
+                    temperature=round(latest.temperature, 2),
+                    health_status=forecast.health_status,
+                    last_updated=latest.recorded_at,
+                )
+            )
+        return result
+    finally:
+        db.close()
 
 
 def get_transformer(transformer_id: str) -> TransformerRead | None:
-    data = _MOCK_TRANSFORMERS.get(transformer_id)
-    return _to_transformer_read(transformer_id, data) if data else None
+    """Fetch a single transformer with live prediction."""
+    db = SessionLocal()
+    try:
+        transformer = db.query(Transformer).filter(Transformer.id == transformer_id).first()
+        if not transformer:
+            return None
+
+        telemetry_history = get_recent_telemetry(db, transformer_id)
+        if not telemetry_history:
+            return None
+
+        forecast = forecast_load(telemetry_history)
+        latest = telemetry_history[-1]
+
+        return TransformerRead(
+            id=transformer.id,
+            zone=transformer.zone,
+            current_load=forecast.current_load,
+            predicted_load=forecast.predicted_load,
+            voltage=round(latest.voltage, 2),
+            current=round(latest.current, 2),
+            temperature=round(latest.temperature, 2),
+            health_status=forecast.health_status,
+            last_updated=latest.recorded_at,
+        )
+    finally:
+        db.close()
 
 
 def get_telemetry_history(transformer_id: str, points: int = 12) -> list[TelemetryRead] | None:
-    """Recent telemetry history, oldest first, at 5-minute intervals."""
-    data = _MOCK_TRANSFORMERS.get(transformer_id)
-    if data is None:
-        return None
+    """Fetch recent telemetry history for a transformer, oldest first."""
+    db = SessionLocal()
+    try:
+        transformer = db.query(Transformer).filter(Transformer.id == transformer_id).first()
+        if not transformer:
+            return None
 
-    now = datetime.now(timezone.utc)
-    base_load = data["current_load"]
-    history = []
-    for i in range(points):
-        minutes_ago = (points - 1 - i) * 5
-        # Gentle upward drift with light oscillation so the history looks
-        # like a realistic approach to the current reading.
-        load = round(base_load - minutes_ago * 0.15 + (i % 3 - 1) * 0.5, 1)
-        history.append(
-            TelemetryRead(
-                id=i + 1,
-                transformer_id=transformer_id,
-                load=load,
-                voltage=round(230 - load * 0.1, 1),
-                current=round(load * 1.8, 1),
-                temperature=round(40 + load * 0.3, 1),
-                recorded_at=now - timedelta(minutes=minutes_ago),
-            )
+        rows = (
+            db.query(Telemetry)
+            .filter(Telemetry.transformer_id == transformer_id)
+            .order_by(Telemetry.recorded_at.desc())
+            .limit(points)
+            .all()
         )
-    return history
+        rows = list(reversed(rows))
+
+        return [
+            TelemetryRead(
+                id=row.id,
+                transformer_id=row.transformer_id,
+                load=round(row.load, 2),
+                voltage=round(row.voltage, 2),
+                current=round(row.current, 2),
+                temperature=round(row.temperature, 2),
+                recorded_at=row.recorded_at,
+            )
+            for row in rows
+        ]
+    finally:
+        db.close()
