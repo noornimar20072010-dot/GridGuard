@@ -3,6 +3,7 @@ import logging
 
 from fastapi import FastAPI
 
+from api.routes.alerts import router as alerts_router
 from api.routes.transformers import router as transformers_router
 from services.generator import TelemetryGenerator
 
@@ -11,6 +12,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="GridGuard API")
 
 app.include_router(transformers_router)
+app.include_router(alerts_router)
 
 
 @app.on_event("startup")
