@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { GridTree } from '@/components/dashboard/GridTree';
@@ -12,7 +13,29 @@ type Status = HealthStatus;
 type Asset = Transformer;
 type Page = 'overview' | 'grid-tree' | 'assets';
 
+interface Settings {
+  warnThreshold: number;
+  critThreshold: number;
+  tempThreshold: number;
+}
+
+interface Zone {
+  id: string;
+  name: string;
+  transformers: Transformer[];
+  assets: Transformer[];
+}
+
 const INITIAL_ZONES = MOCK_ZONES;
+const DEFAULT_SETTINGS: Settings = {
+  warnThreshold: 75,
+  critThreshold: 90,
+  tempThreshold: 80,
+};
+
+function useSettings(): Settings {
+  return DEFAULT_SETTINGS;
+}
 
 // Health is decided here — deterministically, from load vs. the configured thresholds.
 // An asset is judged on its worst case: current load or predicted load, whichever is higher.
@@ -65,7 +88,9 @@ function LoadBar({ value, predicted }: { value: number; predicted?: number | nul
 
 // ── Overview Page ──────────────────────────────────────────────────────────
 function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
-  const allAssets = INITIAL_ZONES.flatMap(z => z.transformers);
+  const settings = useSettings();
+  const zones = zonesWithStatus(INITIAL_ZONES, settings);
+  const allAssets = zones.flatMap(z => z.assets);
   const critCount = allAssets.filter(a => a.status === 'crit').length;
   const warnCount = allAssets.filter(a => a.status === 'warn').length;
 
@@ -123,7 +148,7 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink/60">Grid Topology</span>
               <button onClick={() => onNavigate('grid-tree')} className="ml-auto text-[10px] text-ok hover:underline font-mono">View Full Tree →</button>
             </div>
-            <GridTree gridName={MOCK_GRID_NAME} zones={INITIAL_ZONES} initialExpandedZones={['zone-a']} />
+            <GridTree gridName={MOCK_GRID_NAME} zones={zones} initialExpandedZones={['zone-a']} />
           </div>
         </div>
       </section>
@@ -210,7 +235,9 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
 // ── Grid Tree Page ─────────────────────────────────────────────────────────
 function GridTreePage() {
-  const transformers = INITIAL_ZONES.flatMap(z => z.transformers);
+  const settings = useSettings();
+  const zones = zonesWithStatus(INITIAL_ZONES, settings);
+  const transformers = zones.flatMap(z => z.assets);
 
   return (
     <div className="h-full overflow-y-auto p-6 space-y-4">
@@ -231,7 +258,7 @@ function GridTreePage() {
       </div>
 
       <div className="rounded-xl border border-line bg-panel/40 p-5">
-        <GridTree gridName={MOCK_GRID_NAME} zones={INITIAL_ZONES} />
+        <GridTree gridName={MOCK_GRID_NAME} zones={zones} />
       </div>
 
       <p className="font-mono text-[11px] text-ink/50">
@@ -243,14 +270,14 @@ function GridTreePage() {
 
 // ── Assets Page ────────────────────────────────────────────────────────────
 function AssetsPage({ initialSelected }: { initialSelected?: string }) {
-  const allAssets = INITIAL_ZONES.flatMap(z => z.transformers);
+  const settings = useSettings();
+  const zones = zonesWithStatus(INITIAL_ZONES, settings);
+  const allAssets = zones.flatMap(z => z.assets);
   const [selected, setSelected] = useState<Asset | null>(
     initialSelected ? allAssets.find(a => a.id === initialSelected) ?? null : null
   );
   const [filter, setFilter] = useState<Status | 'all'>('all');
   const [search, setSearch] = useState('');
-
-  const selected = allAssets.find(a => a.id === selectedId) ?? null;
 
   const filtered = allAssets.filter(a => {
     if (filter !== 'all' && a.status !== filter) return false;
@@ -309,7 +336,7 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
             {filtered.map(asset => (
               <button
                 key={asset.id}
-                onClick={() => setSelectedId(prev => prev === asset.id ? null : asset.id)}
+                onClick={() => setSelected(prev => prev?.id === asset.id ? null : asset)}
                 className={`w-full grid grid-cols-[1fr_1fr_2fr_1fr_1fr_1fr_1fr] gap-3 px-4 py-3 text-left transition-all duration-200 hover:bg-white/[0.03] ${selected?.id === asset.id ? 'bg-white/[0.05] border-l-2 border-ok' : ''}`}
               >
                 <span className={`font-mono font-bold text-sm ${asset.status === 'crit' ? 'text-crit' : 'text-white'}`}>{asset.id}</span>
@@ -418,12 +445,6 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
 }
 
 // ── Main Dashboard ─────────────────────────────────────────────────────────
-const PAGE_TITLES: Record<Page, string> = {
-  overview: 'Global Utility Operations Dashboard',
-  'grid-tree': 'Grid Topology — Northeast Region',
-  assets: 'Asset Registry',
-};
-
 function isPage(key: string): key is Page {
   return key === 'overview' || key === 'grid-tree' || key === 'assets';
 }
