@@ -46,12 +46,12 @@ export function Sidebar({
             <span className="grid h-8 w-8 place-items-center rounded-lg border border-ok/25 bg-ok/10">
               <ShieldCheck className="h-4 w-4 text-ok" />
             </span>
-            <span className="text-[15px] font-bold tracking-[0.16em]">GRIDGUARD</span>
+            <span className="text-lg font-bold tracking-[0.16em]">GRIDGUARD</span>
           </span>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md p-1.5 text-ink/60 hover:bg-raised hover:text-ink lg:hidden"
+            className="rounded-md p-1.5 text-slate-200 hover:bg-raised hover:text-ink lg:hidden"
           >
             <span className="sr-only">Close navigation</span>
             <X className="h-4 w-4" />
@@ -72,17 +72,17 @@ export function Sidebar({
         <div className="border-t border-line p-3">
           <div className="flex items-center gap-3 px-2 py-2">
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-line bg-raised">
-              <UserRound className="h-4 w-4 text-ink/70" />
+              <UserRound className="h-4 w-4 text-slate-200" />
             </span>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold">{operatorName ?? 'Operator'}</p>
-              {operatorName && <p className="truncate text-[11px] text-ink/60">Operator</p>}
+              {operatorName && <p className="truncate text-sm text-slate-200">Operator</p>}
             </div>
           </div>
           <button
             type="button"
             onClick={onLogout}
-            className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink/80 transition-colors hover:bg-raised hover:text-ink"
+            className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-100 transition-colors hover:bg-raised hover:text-ink"
           >
             <LogOut className="h-4 w-4" />
             Log out
@@ -115,14 +115,14 @@ function SidebarNavRow({
         'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors',
         isActive
           ? 'bg-raised font-semibold text-ink'
-          : 'text-ink/80 hover:bg-raised hover:text-ink',
-        comingSoon && 'cursor-not-allowed opacity-40 hover:bg-transparent hover:text-ink/80'
+          : 'text-slate-100 hover:bg-raised hover:text-ink',
+        comingSoon && 'cursor-not-allowed opacity-40 hover:bg-transparent hover:text-slate-100'
       )}
     >
       <Icon className={cn('h-[18px] w-[18px] shrink-0', isActive && 'text-ok')} />
       <span className="flex-1 truncate">{label}</span>
       {badge && (
-        <span className="rounded border border-warn/30 bg-warn/10 px-1.5 font-mono text-[10px] font-bold text-warn">
+        <span className="rounded border border-warn/30 bg-warn/10 px-1.5 font-mono text-sm font-bold text-warn">
           {badge}
         </span>
       )}

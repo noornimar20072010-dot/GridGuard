@@ -116,11 +116,16 @@ def forecast_load(
     current_load = telemetry_history[-1].load
     loads = [row.load for row in telemetry_history]
 
-    if len(telemetry_history) >= MIN_POINTS_FOR_REGRESSION:
+    time_span_seconds = (telemetry_history[-1].recorded_at - telemetry_history[0].recorded_at).total_seconds()
+
+    if len(telemetry_history) >= MIN_POINTS_FOR_REGRESSION and time_span_seconds >= MIN_SPAN_SECONDS_FOR_REGRESSION:
         points = [(row.recorded_at, row.load) for row in telemetry_history]
         predicted_load = _linear_regression_forecast(points, horizon_seconds)
         method = "linear_regression"
     else:
+        # Too few points, or readings too close together in time to fit a
+        # trend line without noise dominating the slope (which extrapolating
+        # over `horizon_seconds` would then amplify wildly).
         predicted_load = _moving_average(loads)
         method = "moving_average"
 

@@ -18,7 +18,7 @@ export function TopNav({ title, onOpenSidebar, onBack, actions }: TopNavProps) {
         <button
           type="button"
           onClick={onOpenSidebar}
-          className="rounded-lg border border-line p-2 text-ink/70 hover:bg-raised hover:text-ink lg:hidden"
+          className="rounded-lg border border-line p-2 text-slate-200 hover:bg-raised hover:text-ink lg:hidden"
         >
           <span className="sr-only">Open navigation</span>
           <Menu className="h-4 w-4" />
@@ -28,7 +28,7 @@ export function TopNav({ title, onOpenSidebar, onBack, actions }: TopNavProps) {
           <button
             type="button"
             onClick={onBack}
-            className="rounded-lg border border-line p-1.5 text-ink/70 hover:bg-raised hover:text-ink"
+            className="rounded-lg border border-line p-1.5 text-slate-200 hover:bg-raised hover:text-ink"
           >
             <span className="sr-only">Back</span>
             <ChevronLeft className="h-4 w-4" />
@@ -40,7 +40,7 @@ export function TopNav({ title, onOpenSidebar, onBack, actions }: TopNavProps) {
 
       <div className="flex shrink-0 items-center gap-3">
         {actions}
-        <span className="hidden items-center gap-2 rounded-full border border-ok/30 bg-ok/10 px-3 py-1 font-mono text-[10px] uppercase tracking-wide text-ok sm:flex">
+        <span className="hidden items-center gap-2 rounded-full border border-ok/30 bg-ok/10 px-3 py-1 font-mono text-sm uppercase tracking-wide text-ok sm:flex">
           <span className="h-1.5 w-1.5 rounded-full bg-ok" />
           Simulated feed · Live
         </span>

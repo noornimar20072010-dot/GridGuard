@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { GridTree } from '@/components/dashboard/GridTree';
@@ -11,7 +10,7 @@ import { statusBg, statusColor, statusLabel } from '@/utils/grid-status';
 // types settle; the remaining views are rebuilt in Milestone 6.
 type Status = HealthStatus;
 type Asset = Transformer;
-type Page = 'overview' | 'grid-tree' | 'assets';
+type Page = 'overview' | 'grid-tree' | 'assets' | 'alerts' | 'reporting' | 'settings';
 
 interface Settings {
   warnThreshold: number;
@@ -23,7 +22,6 @@ interface Zone {
   id: string;
   name: string;
   transformers: Transformer[];
-  assets: Transformer[];
 }
 
 const INITIAL_ZONES = MOCK_ZONES;
@@ -33,8 +31,9 @@ const DEFAULT_SETTINGS: Settings = {
   tempThreshold: 80,
 };
 
-function useSettings(): Settings {
-  return DEFAULT_SETTINGS;
+function useSettingsState() {
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  return { settings, setSettings };
 }
 
 // Health is decided here — deterministically, from load vs. the configured thresholds.
@@ -45,11 +44,11 @@ function loadStatus(loadPct: number, s: Settings): Status {
 function assetStatus(asset: Asset, s: Settings): Status {
   return loadStatus(Math.max(asset.load, asset.predictedLoad ?? 0), s);
 }
-function assetsWithStatus(assets: Asset[], s: Settings): Asset[] {
-  return assets.map(a => ({ ...a, status: assetStatus(a, s) }));
+function transformersWithStatus(transformers: Asset[], s: Settings): Asset[] {
+  return transformers.map(a => ({ ...a, status: assetStatus(a, s) }));
 }
 function zonesWithStatus(zones: Zone[], s: Settings): Zone[] {
-  return zones.map(z => ({ ...z, assets: assetsWithStatus(z.assets, s) }));
+  return zones.map(z => ({ ...z, transformers: transformersWithStatus(z.transformers, s) }));
 }
 
 const PAGE_TITLES: Record<Page, string> = {
@@ -64,22 +63,21 @@ const PAGE_TITLES: Record<Page, string> = {
 // ── Sub-components ─────────────────────────────────────────────────────────
 
 // Load bar
-function LoadBar({ value, predicted }: { value: number; predicted?: number | null }) {
-  const settings = useSettings();
+function LoadBar({ value, predicted, settings }: { value: number; predicted?: number | null; settings: Settings }) {
   const color = statusColor(loadStatus(value, settings));
   return (
     <div className="w-full">
-      <div className="flex justify-between text-[10px] mb-1">
-        <span className="text-ink/60">Current</span>
+      <div className="flex justify-between text-sm mb-1">
+        <span className="text-slate-200">Current</span>
         <span className="font-mono font-bold" style={{ color }}>{value}%</span>
       </div>
-      <div className="h-1.5 w-full rounded-full bg-white/5 overflow-hidden">
+      <div className="h-1.5 w-full rounded-full bg-slate-900/5 overflow-hidden">
         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${value}%`, background: color, boxShadow: `0 0 6px ${color}80` }} />
       </div>
       {predicted != null && (
-        <div className="flex justify-between text-[10px] mt-0.5">
-          <span className="text-ink/40">Predicted</span>
-          <span className="font-mono text-ink/60">{predicted}%</span>
+        <div className="flex justify-between text-sm mt-0.5">
+          <span className="text-slate-300">Predicted</span>
+          <span className="font-mono text-slate-200">{predicted}%</span>
         </div>
       )}
     </div>
@@ -87,10 +85,9 @@ function LoadBar({ value, predicted }: { value: number; predicted?: number | nul
 }
 
 // ── Overview Page ──────────────────────────────────────────────────────────
-function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
-  const settings = useSettings();
+function OverviewPage({ onNavigate, settings }: { onNavigate: (p: Page) => void; settings: Settings }) {
   const zones = zonesWithStatus(INITIAL_ZONES, settings);
-  const allAssets = zones.flatMap(z => z.assets);
+  const allAssets = zones.flatMap(z => z.transformers);
   const critCount = allAssets.filter(a => a.status === 'crit').length;
   const warnCount = allAssets.filter(a => a.status === 'warn').length;
 
@@ -105,9 +102,9 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           { label: 'Warnings', value: String(warnCount), sub: 'Monitor closely', color: 'text-warn', glow: '' },
         ].map(kpi => (
           <div key={kpi.label} className={`glass-panel rounded-xl p-5 flex flex-col gap-1 hover:-translate-y-1 transition-all duration-300 ${kpi.glow}`}>
-            <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink/60">{kpi.label}</p>
+            <p className="font-mono text-base uppercase tracking-[0.12em] text-slate-200">{kpi.label}</p>
             <p className={`text-3xl font-extrabold ${kpi.color}`}>{kpi.value}</p>
-            <p className="text-[11px] text-ink/50">{kpi.sub}</p>
+            <p className="text-sm text-slate-300">{kpi.sub}</p>
           </div>
         ))}
       </div>
@@ -119,7 +116,7 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
         {/* Left: summary */}
         <div className="z-10 w-full lg:w-60 flex-shrink-0 flex flex-col gap-4">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-white font-bold">Grid Status · NE Region</h2>
+          <h2 className="font-mono text-base uppercase tracking-[0.14em] text-white font-bold">Grid Status · NE Region</h2>
           <div className="glass-card p-4 rounded-xl space-y-3 relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent pointer-events-none" />
             {[
@@ -129,12 +126,12 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               { label: 'Warnings', val: String(warnCount), color: 'text-warn' },
             ].map(r => (
               <div key={r.label} className="flex justify-between items-center text-sm">
-                <span className="text-ink/80">{r.label}:</span>
+                <span className="text-slate-100">{r.label}:</span>
                 <span className={`font-bold ${r.color}`}>{r.val}</span>
               </div>
             ))}
           </div>
-          <div className="mt-auto bg-base/90 backdrop-blur border border-line p-3 rounded-lg flex flex-col gap-2 font-mono text-[10px] text-ink/80">
+          <div className="mt-auto bg-base/90 backdrop-blur border border-line p-3 rounded-lg flex flex-col gap-2 font-mono text-base text-slate-100">
             <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-ok rounded" /> Normal (&lt;{settings.warnThreshold}% Load)</span>
             <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-warn rounded" /> Warning ({settings.warnThreshold}-{settings.critThreshold}%)</span>
             <span className="flex items-center gap-2"><span className="h-0.5 w-4 bg-crit rounded" /> Critical Risk (&gt;{settings.critThreshold}%)</span>
@@ -145,8 +142,8 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         <div className="z-10 flex-1 glass-card rounded-xl p-6 overflow-x-auto relative">
           <div className="min-w-[400px]">
             <div className="flex items-center gap-2 mb-3">
-              <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink/60">Grid Topology</span>
-              <button onClick={() => onNavigate('grid-tree')} className="ml-auto text-[10px] text-ok hover:underline font-mono">View Full Tree →</button>
+              <span className="font-mono text-base uppercase tracking-[0.12em] text-slate-200">Grid Topology</span>
+              <button onClick={() => onNavigate('grid-tree')} className="ml-auto text-sm text-ok hover:underline font-mono">View Full Tree →</button>
             </div>
             <GridTree gridName={MOCK_GRID_NAME} zones={zones} initialExpandedZones={['zone-a']} />
           </div>
@@ -158,13 +155,13 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         {/* Load chart */}
         <div className="glass-panel rounded-xl p-5 flex flex-col xl:col-span-1 group hover:-translate-y-1 hover:shadow-2xl transition-all duration-300">
           <div className="flex justify-between items-start mb-4">
-            <h3 className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink/80 group-hover:text-white transition-colors">Real-Time Grid Load (GW)</h3>
+            <h3 className="font-mono text-base uppercase tracking-[0.12em] text-slate-100 group-hover:text-white transition-colors">Real-Time Grid Load (GW)</h3>
           </div>
           <div className="flex items-baseline gap-2 mb-6 relative">
             <span className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-ok to-blue-400 drop-shadow-lg">11.2 GW</span>
           </div>
           <div className="flex-1 min-h-[120px] flex items-end gap-1.5 mt-auto relative">
-            <div className="absolute left-0 bottom-0 top-0 w-6 border-r border-line/30 flex flex-col justify-between text-[9px] text-ink/60 pb-4">
+            <div className="absolute left-0 bottom-0 top-0 w-6 border-r border-line/30 flex flex-col justify-between text-xs text-slate-200 pb-4">
               <span>16</span><span>12</span><span>8</span><span>4</span><span>0</span>
             </div>
             <div className="pl-8 flex-1 flex items-end gap-[1%] h-full pt-4 relative">
@@ -177,7 +174,7 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               ))}
             </div>
           </div>
-          <div className="flex justify-between pl-8 pr-1 mt-2 font-mono text-[9px] text-ink/60">
+          <div className="flex justify-between pl-8 pr-1 mt-2 font-mono text-xs text-slate-200">
             {['00','02','04','06','08','10','12','14','16','18','20','22','Now'].map(t => <span key={t}>{t}</span>)}
           </div>
         </div>
@@ -188,7 +185,7 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           <div className="absolute inset-0 bg-gradient-to-br from-crit/5 to-transparent pointer-events-none" />
           <div className="flex justify-between items-start mb-4">
             <div>
-              <h3 className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink/80">Active Alert · T-104 Status</h3>
+              <h3 className="font-mono text-base uppercase tracking-[0.12em] text-slate-100">Active Alert · T-104 Status</h3>
               <div className="mt-1 flex items-center gap-2">
                 <span className="text-lg font-bold text-white">T-104</span>
                 <span className="text-sm font-semibold text-crit flex items-center gap-1">PREDICTED OVERLOAD — 96% <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15"/></svg></span>
@@ -198,14 +195,14 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           </div>
           <div className="flex flex-col lg:flex-row gap-6 mt-2 flex-1">
             <div className="flex-1 bg-raised/50 rounded-lg p-4 border border-line flex flex-col justify-between">
-              <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink/80 mb-2">Load History & Forecast</p>
+              <p className="font-mono text-base uppercase tracking-[0.12em] text-slate-100 mb-2">Load History & Forecast</p>
               <svg viewBox="0 0 320 100" className="mt-1 h-28 w-full" preserveAspectRatio="none" role="img">
                 <line x1="0" y1="20" x2="320" y2="20" stroke="#ef4444" strokeWidth="1" strokeDasharray="3 4" opacity="0.6" />
                 <path d="M0 80 L26 76 L52 78 L78 70 L104 72 L130 64 L156 60 L182 62 L208 54 L234 48" fill="none" stroke="#21d07a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M234 48 L260 40 L286 34 L312 18" fill="none" stroke="#f0a92e" strokeWidth="2.5" strokeDasharray="5 4" strokeLinecap="round" />
                 <circle cx="312" cy="18" r="4" fill="#ef4444" className="animate-pulse" />
               </svg>
-              <div className="flex gap-4 font-mono text-[9px] text-ink/80 mt-2">
+              <div className="flex gap-4 font-mono text-xs text-slate-100 mt-2">
                 <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-ok" />Actual</span>
                 <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-warn" />Forecast</span>
                 <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-crit" />Safe limit</span>
@@ -214,7 +211,7 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
             <div className="w-full lg:w-72 flex flex-col">
               <div className="flex items-center gap-2 border-b border-crit/20 pb-2 mb-3">
                 <svg viewBox="0 0 24 24" className="h-4 w-4 text-crit" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 9v4m0 3h.01M10.3 4.3 2.6 18a1.6 1.6 0 0 0 1.4 2.4h16a1.6 1.6 0 0 0 1.4-2.4L13.7 4.3a1.6 1.6 0 0 0-2.8 0Z"/></svg>
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-crit font-semibold">Operator Brief</p>
+                <p className="font-mono text-base uppercase tracking-[0.14em] text-crit font-semibold">Operator Brief</p>
               </div>
               <p className="text-[13px] text-ink/90 leading-relaxed mb-3">
                 <span className="font-semibold text-white">Transformer T-104 (Zone A)</span> is trending toward overload. Load has climbed from 74% to 89% and is projected to reach <span className="font-mono text-crit font-bold">96%</span> of rated capacity within 28 mins. Oil temp is at 78 °C and rising.
@@ -234,23 +231,22 @@ function OverviewPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 }
 
 // ── Grid Tree Page ─────────────────────────────────────────────────────────
-function GridTreePage() {
-  const settings = useSettings();
+function GridTreePage({ settings }: { settings: Settings }) {
   const zones = zonesWithStatus(INITIAL_ZONES, settings);
-  const transformers = zones.flatMap(z => z.assets);
+  const transformers = zones.flatMap(z => z.transformers);
 
   return (
     <div className="h-full overflow-y-auto p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-white">Grid Topology</h2>
-          <p className="text-[12px] text-ink/60 font-mono mt-0.5">
+          <p className="text-base text-slate-200 font-mono mt-0.5">
             Northeast Region · {transformers.length} transformers across {INITIAL_ZONES.length} zones
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {(['ok', 'warn', 'crit'] as Status[]).map(s => (
-            <span key={s} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${statusBg(s)}`}>
+            <span key={s} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm font-bold uppercase tracking-wider ${statusBg(s)}`}>
               {statusLabel(s)} · {transformers.filter(t => t.status === s).length}
             </span>
           ))}
@@ -261,7 +257,7 @@ function GridTreePage() {
         <GridTree gridName={MOCK_GRID_NAME} zones={zones} />
       </div>
 
-      <p className="font-mono text-[11px] text-ink/50">
+      <p className="font-mono text-base text-slate-300">
         Select a transformer to open its detail page.
       </p>
     </div>
@@ -269,10 +265,9 @@ function GridTreePage() {
 }
 
 // ── Assets Page ────────────────────────────────────────────────────────────
-function AssetsPage({ initialSelected }: { initialSelected?: string }) {
-  const settings = useSettings();
+function AssetsPage({ initialSelected, settings }: { initialSelected?: string; settings: Settings }) {
   const zones = zonesWithStatus(INITIAL_ZONES, settings);
-  const allAssets = zones.flatMap(z => z.assets);
+  const allAssets = zones.flatMap(z => z.transformers);
   const [selected, setSelected] = useState<Asset | null>(
     initialSelected ? allAssets.find(a => a.id === initialSelected) ?? null : null
   );
@@ -293,12 +288,12 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
           <h2 className="text-lg font-bold text-white flex-1">Assets</h2>
           {/* Search */}
           <div className="relative">
-            <svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-ink/40" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-300" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search assets…"
-              className="pl-8 pr-3 py-1.5 bg-raised/60 border border-white/10 rounded-lg text-sm text-white placeholder:text-ink/30 focus:outline-none focus:border-ok/40 w-44"
+              className="pl-8 pr-3 py-1.5 bg-raised/60 border border-white/10 rounded-lg text-sm text-white placeholder:text-slate-400 focus:outline-none focus:border-ok/40 w-44"
             />
           </div>
           {/* Filter pills */}
@@ -307,13 +302,13 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`px-3 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider border transition-colors ${
+                className={`px-3 py-1 rounded-lg text-sm font-bold uppercase tracking-wider border transition-colors ${
                   filter === f
-                    ? f === 'all' ? 'bg-white/10 border-white/20 text-white'
+                    ? f === 'all' ? 'bg-slate-900/10 border-white/20 text-white'
                       : f === 'ok' ? 'bg-ok/20 border-ok/40 text-ok'
                       : f === 'warn' ? 'bg-warn/20 border-warn/40 text-warn'
                       : 'bg-crit/20 border-crit/40 text-crit'
-                    : 'bg-transparent border-white/5 text-ink/50 hover:border-white/15 hover:text-ink/80'
+                    : 'bg-transparent border-white/5 text-slate-300 hover:border-white/15 hover:text-slate-100'
                 }`}
               >
                 {f === 'all' ? `All (${allAssets.length})` : `${statusLabel(f)} (${allAssets.filter(a => a.status === f).length})`}
@@ -325,29 +320,29 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
         {/* Table */}
         <div className="rounded-xl border border-white/10 bg-panel/60 backdrop-blur-xl overflow-hidden shadow-2xl">
           {/* Table head */}
-          <div className="grid grid-cols-[1fr_1fr_2fr_1fr_1fr_1fr_1fr] gap-3 px-4 py-2.5 border-b border-white/5 font-mono text-[10px] uppercase tracking-[0.1em] text-ink/40">
+          <div className="grid grid-cols-[1fr_1fr_2fr_1fr_1fr_1fr_1fr] gap-3 px-4 py-2.5 border-b border-white/5 font-mono text-base uppercase tracking-[0.1em] text-slate-300">
             <span>ID</span><span>Zone</span><span>Load</span><span>Voltage</span><span>Temp</span><span>Status</span><span>Updated</span>
           </div>
           {/* Rows */}
           <div className="divide-y divide-white/[0.04]">
             {filtered.length === 0 && (
-              <div className="py-12 text-center text-ink/30 text-sm font-mono">No assets match the filter</div>
+              <div className="py-12 text-center text-slate-400 text-sm font-mono">No assets match the filter</div>
             )}
             {filtered.map(asset => (
               <button
                 key={asset.id}
                 onClick={() => setSelected(prev => prev?.id === asset.id ? null : asset)}
-                className={`w-full grid grid-cols-[1fr_1fr_2fr_1fr_1fr_1fr_1fr] gap-3 px-4 py-3 text-left transition-all duration-200 hover:bg-white/[0.03] ${selected?.id === asset.id ? 'bg-white/[0.05] border-l-2 border-ok' : ''}`}
+                className={`w-full grid grid-cols-[1fr_1fr_2fr_1fr_1fr_1fr_1fr] gap-3 px-4 py-3 text-left transition-all duration-200 hover:bg-slate-900/[0.03] ${selected?.id === asset.id ? 'bg-slate-900/[0.05] border-l-2 border-ok' : ''}`}
               >
                 <span className={`font-mono font-bold text-sm ${asset.status === 'crit' ? 'text-crit' : 'text-white'}`}>{asset.id}</span>
-                <span className="text-[12px] text-ink/70">{asset.zone}</span>
+                <span className="text-base text-ink/70">{asset.zone}</span>
                 <div className="pr-4">
-                  <LoadBar value={asset.load} />
+                  <LoadBar value={asset.load} settings={settings} />
                 </div>
-                <span className="font-mono text-[12px] text-ink/80">{asset.voltage} kV</span>
-                <span className={`font-mono text-[12px] ${asset.tempC >= settings.tempThreshold ? 'text-warn' : 'text-ink/80'}`}>{asset.tempC}°C</span>
+                <span className="font-mono text-base text-slate-100">{asset.voltage} kV</span>
+                <span className={`font-mono text-base ${asset.tempC >= settings.tempThreshold ? 'text-warn' : 'text-slate-100'}`}>{asset.tempC}°C</span>
                 <StatusBadge status={asset.status} />
-                <span className="font-mono text-[11px] text-ink/40">{asset.lastUpdated}</span>
+                <span className="font-mono text-base text-slate-300">{asset.lastUpdated}</span>
               </button>
             ))}
           </div>
@@ -362,13 +357,13 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
             <div>
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink/50">Asset Details</p>
+                  <p className="font-mono text-base uppercase tracking-[0.12em] text-slate-300">Asset Details</p>
                   <h3 className="text-2xl font-extrabold text-white">{selected.id}</h3>
-                  <p className="text-[12px] text-ink/50 mt-0.5">{selected.type} · {selected.zone}</p>
+                  <p className="text-base text-slate-300 mt-0.5">{selected.type} · {selected.zone}</p>
                 </div>
                 <StatusBadge status={selected.status} />
               </div>
-              <LoadBar value={selected.load} predicted={selected.predictedLoad} />
+              <LoadBar value={selected.load} predicted={selected.predictedLoad} settings={settings} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -379,7 +374,7 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
                 { label: 'Pred. Load', val: `${selected.predictedLoad}%`, icon: '↑', alert: (selected.predictedLoad ?? 0) >= settings.critThreshold },
               ].map(m => (
                 <div key={m.label} className={`bg-raised/50 border rounded-lg p-3 ${m.alert ? 'border-warn/30' : 'border-white/5'}`}>
-                  <p className="text-[10px] text-ink/50 font-mono uppercase">{m.label}</p>
+                  <p className="text-sm text-slate-300 font-mono uppercase">{m.label}</p>
                   <p className={`text-sm font-bold mt-0.5 ${m.alert ? 'text-warn' : 'text-white'}`}>{m.val}</p>
                 </div>
               ))}
@@ -387,7 +382,7 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
 
             {/* Trend mini */}
             <div className="bg-raised/30 border border-white/5 rounded-lg p-3">
-              <p className="font-mono text-[10px] uppercase text-ink/50 mb-2">Load History</p>
+              <p className="font-mono text-base uppercase text-slate-300 mb-2">Load History</p>
               <svg viewBox="0 0 240 70" className="w-full h-14" preserveAspectRatio="none">
                 {selected.status === 'crit' && <line x1="0" y1="14" x2="240" y2="14" stroke="#ef4444" strokeWidth="0.5" strokeDasharray="2 3" opacity="0.4" />}
                 <defs>
@@ -423,20 +418,20 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
               <div className="bg-crit/10 border border-crit/20 rounded-lg p-3">
                 <div className="flex items-center gap-2 mb-2">
                   <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-crit" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 9v4m0 3h.01M10.3 4.3 2.6 18a1.6 1.6 0 0 0 1.4 2.4h16a1.6 1.6 0 0 0 1.4-2.4L13.7 4.3a1.6 1.6 0 0 0-2.8 0Z"/></svg>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-crit font-bold">Operator Brief</p>
+                  <p className="font-mono text-xs uppercase tracking-[0.12em] text-crit font-bold">Operator Brief</p>
                 </div>
-                <p className="text-[11px] text-ink/80 leading-relaxed">
+                <p className="text-sm text-slate-100 leading-relaxed">
                   {selected.id} is projecting <strong className="text-crit">{selected.predictedLoad}%</strong> load, above the {settings.critThreshold}% critical threshold. Oil temperature at <strong className="text-warn">{selected.tempC}°C</strong>. Immediate load-shedding recommended.
                 </p>
               </div>
             )}
 
-            <p className="text-[10px] text-ink/30 font-mono">Last updated: {selected.lastUpdated}</p>
+            <p className="text-sm text-slate-400 font-mono">Last updated: {selected.lastUpdated}</p>
           </div>
         ) : (
           <div className="rounded-xl border border-white/5 bg-panel/30 p-8 flex flex-col items-center justify-center gap-3 text-center">
             <svg viewBox="0 0 24 24" className="h-8 w-8 text-ink/20" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
-            <p className="text-sm text-ink/40">Select an asset from the table to view details</p>
+            <p className="text-sm text-slate-300">Select an asset from the table to view details</p>
           </div>
         )}
       </div>
@@ -444,14 +439,240 @@ function AssetsPage({ initialSelected }: { initialSelected?: string }) {
   );
 }
 
+// ── Alerts Page ────────────────────────────────────────────────────────────
+function AlertsPage({ settings }: { settings: Settings }) {
+  const zones = zonesWithStatus(INITIAL_ZONES, settings);
+  const allAssets = zones.flatMap(z => z.transformers);
+  const alerts = allAssets.filter(a => a.status !== 'ok').map(a => ({
+    id: a.id,
+    transformer: a.id,
+    zone: a.zone,
+    status: a.status,
+    load: a.load,
+    predicted: a.predictedLoad,
+    createdAt: a.lastUpdated,
+  }));
+
+  return (
+    <div className="p-6">
+      <div className="rounded-xl border border-line bg-panel p-6">
+        <h2 className="text-lg font-bold text-ink mb-4">Active Alerts</h2>
+        {alerts.length === 0 ? (
+          <p className="text-slate-300">No active alerts</p>
+        ) : (
+          <div className="space-y-3">
+            {alerts.map(alert => (
+              <div key={alert.id} className={`rounded-lg border p-4 ${alert.status === 'crit' ? 'border-crit/50 bg-crit/10' : 'border-warn/50 bg-warn/10'}`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold text-ink">{alert.transformer} ({alert.zone})</p>
+                    <p className="text-sm text-slate-300">Load: {alert.load}% → Predicted: {alert.predicted}%</p>
+                  </div>
+                  <span className={`rounded-lg px-3 py-1 font-mono text-xs font-bold uppercase ${alert.status === 'crit' ? 'bg-crit/20 text-crit' : 'bg-warn/20 text-warn'}`}>
+                    {alert.status === 'crit' ? 'Critical' : 'Warning'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Reporting Page ──────────────────────────────────────────────────────────
+function ReportingPage({ settings }: { settings: Settings }) {
+  const zones = INITIAL_ZONES;
+  const allAssets = zones.flatMap(z => z.transformers);
+
+  // Calculate stats
+  const avgLoad = Math.round(allAssets.reduce((sum, a) => sum + a.load, 0) / allAssets.length);
+  const avgTemp = Math.round(allAssets.reduce((sum, a) => sum + a.tempC, 0) / allAssets.length);
+  const critCount = allAssets.filter(a => Math.max(a.load, a.predictedLoad ?? 0) >= settings.critThreshold).length;
+  const warnCount = allAssets.filter(a => Math.max(a.load, a.predictedLoad ?? 0) >= settings.warnThreshold && Math.max(a.load, a.predictedLoad ?? 0) < settings.critThreshold).length;
+  const healthyCount = allAssets.filter(a => Math.max(a.load, a.predictedLoad ?? 0) < settings.warnThreshold).length;
+
+  const maxLoad = Math.max(...allAssets.map(a => a.load));
+  const minLoad = Math.min(...allAssets.map(a => a.load));
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="rounded-xl border border-line bg-panel p-6">
+        <h2 className="text-2xl font-bold text-white mb-6">Operational Reporting</h2>
+
+        {/* Key Metrics */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-slate-800/50 rounded-lg p-4">
+            <p className="text-xs text-slate-400 uppercase tracking-wider">Average Load</p>
+            <p className="text-3xl font-bold text-blue-400 mt-2">{avgLoad}%</p>
+          </div>
+          <div className="bg-slate-800/50 rounded-lg p-4">
+            <p className="text-xs text-slate-400 uppercase tracking-wider">Avg Temperature</p>
+            <p className="text-3xl font-bold text-orange-400 mt-2">{avgTemp}°C</p>
+          </div>
+          <div className="bg-slate-800/50 rounded-lg p-4">
+            <p className="text-xs text-slate-400 uppercase tracking-wider">Max Load</p>
+            <p className="text-3xl font-bold text-red-400 mt-2">{maxLoad}%</p>
+          </div>
+          <div className="bg-slate-800/50 rounded-lg p-4">
+            <p className="text-xs text-slate-400 uppercase tracking-wider">Min Load</p>
+            <p className="text-3xl font-bold text-green-400 mt-2">{minLoad}%</p>
+          </div>
+        </div>
+
+        {/* Health Summary */}
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="bg-emerald-900/30 border border-emerald-700/30 rounded-lg p-4">
+            <p className="text-sm text-slate-300">Healthy Transformers</p>
+            <p className="text-4xl font-bold text-emerald-400 mt-2">{healthyCount}</p>
+          </div>
+          <div className="bg-amber-900/30 border border-amber-700/30 rounded-lg p-4">
+            <p className="text-sm text-slate-300">Warning Transformers</p>
+            <p className="text-4xl font-bold text-amber-400 mt-2">{warnCount}</p>
+          </div>
+          <div className="bg-red-900/30 border border-red-700/30 rounded-lg p-4">
+            <p className="text-sm text-slate-300">Critical Transformers</p>
+            <p className="text-4xl font-bold text-red-400 mt-2">{critCount}</p>
+          </div>
+        </div>
+
+        {/* Transformer Details Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-700">
+                <th className="text-left p-3 text-slate-300 font-semibold">Transformer</th>
+                <th className="text-right p-3 text-slate-300 font-semibold">Load</th>
+                <th className="text-right p-3 text-slate-300 font-semibold">Predicted</th>
+                <th className="text-right p-3 text-slate-300 font-semibold">Temp</th>
+                <th className="text-center p-3 text-slate-300 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allAssets.map((asset) => {
+                const status = Math.max(asset.load, asset.predictedLoad ?? 0) >= settings.critThreshold ? 'critical' : Math.max(asset.load, asset.predictedLoad ?? 0) >= settings.warnThreshold ? 'warning' : 'healthy';
+                const statusColor = status === 'critical' ? 'text-red-400' : status === 'warning' ? 'text-amber-400' : 'text-emerald-400';
+
+                return (
+                  <tr key={asset.id} className="border-b border-slate-800 hover:bg-slate-800/30">
+                    <td className="p-3 text-slate-200">{asset.id}</td>
+                    <td className="text-right p-3 font-mono text-slate-100">{asset.load}%</td>
+                    <td className="text-right p-3 font-mono text-slate-200">{asset.predictedLoad}%</td>
+                    <td className="text-right p-3 font-mono text-slate-100">{asset.tempC}°C</td>
+                    <td className={`text-center p-3 font-semibold ${statusColor}`}>
+                      {status.toUpperCase()}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Settings Page ───────────────────────────────────────────────────────────
+function SettingsPage({ settings, onSettingsChange }: { settings: Settings; onSettingsChange: (settings: Settings) => void }) {
+  const [warnThreshold, setWarnThreshold] = useState(settings.warnThreshold);
+  const [critThreshold, setCritThreshold] = useState(settings.critThreshold);
+  const [tempThreshold, setTempThreshold] = useState(settings.tempThreshold);
+
+  function handleSave() {
+    onSettingsChange({
+      warnThreshold,
+      critThreshold,
+      tempThreshold,
+    });
+  }
+
+  return (
+    <div className="p-6 max-w-2xl">
+      <div className="rounded-xl border border-line bg-panel p-6">
+        <h2 className="text-2xl font-bold text-white mb-2">Settings & Thresholds</h2>
+        <p className="text-slate-400 text-sm mb-6">Adjust transformer load and temperature thresholds. Changes apply instantly to the dashboard.</p>
+
+        <div className="space-y-6">
+          <div className="bg-slate-800/30 rounded-lg p-4">
+            <label className="block text-base font-medium text-white mb-4">Warning Load Threshold: <span className="text-amber-400">{warnThreshold}%</span></label>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={warnThreshold}
+              onChange={(e) => setWarnThreshold(Number(e.target.value))}
+              className="w-full"
+            />
+            <p className="text-sm text-slate-400 mt-2">Transformers exceeding this load will show a warning (yellow)</p>
+          </div>
+
+          <div className="bg-slate-800/30 rounded-lg p-4">
+            <label className="block text-base font-medium text-white mb-4">Critical Load Threshold: <span className="text-red-400">{critThreshold}%</span></label>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={critThreshold}
+              onChange={(e) => setCritThreshold(Number(e.target.value))}
+              className="w-full"
+            />
+            <p className="text-sm text-slate-400 mt-2">Transformers exceeding this load will show as critical (red)</p>
+          </div>
+
+          <div className="bg-slate-800/30 rounded-lg p-4">
+            <label className="block text-base font-medium text-white mb-4">Temperature Alert Threshold: <span className="text-orange-400">{tempThreshold}°C</span></label>
+            <input
+              type="range"
+              min="40"
+              max="100"
+              value={tempThreshold}
+              onChange={(e) => setTempThreshold(Number(e.target.value))}
+              className="w-full"
+            />
+            <p className="text-sm text-slate-400 mt-2">Alerts trigger when transformer temperature exceeds this value</p>
+          </div>
+
+          {/* Current Values Display */}
+          <div className="border border-slate-700 rounded-lg p-4 bg-slate-900/50">
+            <p className="text-sm text-slate-300 mb-3 font-semibold">Current Settings:</p>
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <p className="text-xs text-slate-400">Warning</p>
+                <p className="text-xl font-bold text-amber-400">{warnThreshold}%</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Critical</p>
+                <p className="text-xl font-bold text-red-400">{critThreshold}%</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Temperature</p>
+                <p className="text-xl font-bold text-orange-400">{tempThreshold}°C</p>
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={handleSave}
+            className="w-full rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-4 transition-all duration-200 text-base"
+          >
+            ✓ Apply Settings
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Dashboard ─────────────────────────────────────────────────────────
 function isPage(key: string): key is Page {
-  return key === 'overview' || key === 'grid-tree' || key === 'assets';
+  return ['overview', 'grid-tree', 'assets', 'alerts', 'reporting', 'settings'].includes(key);
 }
 
 export function Dashboard() {
-  const navigate = useNavigate();
   const [page, setPage] = useState<Page>('overview');
+  const { settings, setSettings } = useSettingsState();
 
   function goToPage(next: Page) {
     setPage(next);
@@ -465,12 +686,25 @@ export function Dashboard() {
       onBack={page === 'overview' ? undefined : () => goToPage('overview')}
     >
       {page === 'overview' && (
-        <div className="h-full overflow-y-auto">
-          <OverviewPage onNavigate={goToPage} />
+        <div
+          className="h-full overflow-y-auto grid-background"
+          style={{
+            background: `
+              radial-gradient(circle at 15% 40%, rgba(59, 130, 246, 0.2) 0%, transparent 40%),
+              radial-gradient(circle at 85% 80%, rgba(34, 197, 94, 0.2) 0%, transparent 40%),
+              linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)
+            `,
+            backgroundAttachment: 'fixed'
+          }}
+        >
+          <OverviewPage onNavigate={goToPage} settings={settings} />
         </div>
       )}
-      {page === 'grid-tree' && <GridTreePage />}
-      {page === 'assets' && <AssetsPage />}
+      {page === 'grid-tree' && <div className="h-full overflow-y-auto grid-background"><GridTreePage settings={settings} /></div>}
+      {page === 'assets' && <div className="h-full overflow-y-auto grid-background"><AssetsPage settings={settings} /></div>}
+      {page === 'alerts' && <div className="h-full overflow-y-auto grid-background"><AlertsPage settings={settings} /></div>}
+      {page === 'reporting' && <div className="h-full overflow-y-auto grid-background"><ReportingPage settings={settings} /></div>}
+      {page === 'settings' && <div className="h-full overflow-y-auto grid-background"><SettingsPage settings={settings} onSettingsChange={setSettings} /></div>}
     </AppShell>
   );
 }

@@ -22,8 +22,7 @@ export const SIDEBAR_NAV: NavItem[] = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
   { key: 'grid-tree', label: 'Grid Tree', icon: Network },
   { key: 'assets', label: 'Assets', icon: Boxes },
-  // TODO(Milestone 7 - Alerts): route to the alert list and drive the badge from live alert data.
-  { key: 'alerts', label: 'Alerts', icon: TriangleAlert, comingSoon: true },
-  { key: 'reporting', label: 'Reporting', icon: FileText, comingSoon: true },
-  { key: 'settings', label: 'Settings', icon: Settings, comingSoon: true },
+  { key: 'alerts', label: 'Alerts', icon: TriangleAlert },
+  { key: 'reporting', label: 'Reporting', icon: FileText },
+  { key: 'settings', label: 'Settings', icon: Settings },
 ]
