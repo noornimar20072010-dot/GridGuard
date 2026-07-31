@@ -13,10 +13,13 @@ from models.telemetry import Telemetry
 
 TRANSFORMERS = {
     "T-101": {"zone": "Zone A", "current_load": 62.0},
-    "T-102": {"zone": "Zone A", "current_load": 81.0},
-    "T-103": {"zone": "Zone A", "current_load": 45.0},
-    "T-201": {"zone": "Zone B", "current_load": 94.0},
-    "T-202": {"zone": "Zone B", "current_load": 58.0},
+    "T-102": {"zone": "Zone A", "current_load": 58.0},
+    "T-104": {"zone": "Zone A", "current_load": 89.0},
+    "T-201": {"zone": "Zone B", "current_load": 44.0},
+    "T-202": {"zone": "Zone B", "current_load": 81.0},
+    "T-301": {"zone": "Zone C", "current_load": 35.0},
+    "T-302": {"zone": "Zone C", "current_load": 41.0},
+    "T-305": {"zone": "Zone C", "current_load": 55.0},
 }
 
 db = SessionLocal()

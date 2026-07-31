@@ -11,4 +11,20 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    proxy: {
+      "/chat": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/transformers": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/alerts": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+    },
+  },
 })

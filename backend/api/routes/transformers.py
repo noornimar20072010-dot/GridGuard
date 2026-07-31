@@ -6,6 +6,8 @@ from schemas.transformer import TransformerRead
 from schemas.user import AuthenticatedUser
 from services import transformer_service
 
+# Note: telemetry endpoint is public (no auth required) for dashboard/chart access
+
 router = APIRouter(prefix="/transformers", tags=["transformers"])
 
 
@@ -26,7 +28,7 @@ def get_transformer(
 
 @router.get("/{transformer_id}/telemetry", response_model=list[TelemetryRead])
 def get_transformer_telemetry(
-    transformer_id: str, _user: AuthenticatedUser = Depends(get_current_user)
+    transformer_id: str
 ) -> list[TelemetryRead]:
     history = transformer_service.get_telemetry_history(transformer_id)
     if history is None:

@@ -6,7 +6,7 @@ export function Login() {
   const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
   return (
-    <div className="font-sans text-ink antialiased min-h-screen bg-base">
+    <div className="font-sans text-ink antialiased min-h-screen bg-base landing-background">
       
 
   {/* ══════════════════ NAVBAR ══════════════════ */}
@@ -104,7 +104,7 @@ export function Login() {
               the transformer does.
             </h1>
 
-            <p className="mt-5 max-w-xl text-lg leading-relaxed text-slate-300 sm:text-base">
+            <p className="mt-5 max-w-xl text-lg leading-relaxed text-slate-100 sm:text-base">
               Most grid monitoring is reactive — it alerts you once a threshold is already breached.
               GridGuard forecasts transformer load from streaming telemetry and raises an early
               warning while there is still time to act.
@@ -153,7 +153,7 @@ export function Login() {
                   <span className="h-2.5 w-2.5 rounded-full bg-line"></span>
                   <span className="h-2.5 w-2.5 rounded-full bg-line"></span>
                 </div>
-                <p className="font-mono text-sm uppercase tracking-[0.14em] text-slate-300">
+                <p className="font-mono text-sm uppercase tracking-[0.14em] text-slate-100">
                   Utility operations dashboard
                 </p>
                 <span
@@ -169,13 +169,13 @@ export function Login() {
                     <li
                       className="flex items-center gap-2 rounded-md border-l-2 border-ok bg-ok/10 px-2 py-2 font-medium text-ok">
                       Overview</li>
-                    <li className="px-2 py-2 text-slate-300">Grid tree</li>
-                    <li className="px-2 py-2 text-slate-300">Transformers</li>
-                    <li className="flex items-center justify-between px-2 py-2 text-slate-300">
+                    <li className="px-2 py-2 text-slate-100">Grid tree</li>
+                    <li className="px-2 py-2 text-slate-100">Transformers</li>
+                    <li className="flex items-center justify-between px-2 py-2 text-slate-100">
                       Alerts
                       <span className="rounded bg-warn/15 px-1.5 font-mono text-sm font-bold text-warn">6</span>
                     </li>
-                    <li className="px-2 py-2 text-slate-300">Reporting</li>
+                    <li className="px-2 py-2 text-slate-100">Reporting</li>
                   </ul>
                 </div>
 
@@ -184,17 +184,17 @@ export function Login() {
                   {/* Summary cards */}
                   <div className="grid grid-cols-3 gap-3">
                     <div className="rounded-lg border border-line bg-raised p-3">
-                      <p className="font-mono text-xs uppercase tracking-[0.12em] text-slate-300">Total load</p>
+                      <p className="font-mono text-xs uppercase tracking-[0.12em] text-slate-100">Total load</p>
                       <p className="mt-1.5 font-mono text-lg font-bold text-ok">11.2<span
-                          className="ml-1 text-sm text-slate-300">GW</span></p>
+                          className="ml-1 text-sm text-slate-100">GW</span></p>
                     </div>
                     <div className="rounded-lg border border-line bg-raised p-3">
-                      <p className="font-mono text-xs uppercase tracking-[0.12em] text-slate-300">Transformers</p>
+                      <p className="font-mono text-xs uppercase tracking-[0.12em] text-slate-100">Transformers</p>
                       <p className="mt-1.5 font-mono text-lg font-bold">48<span
-                          className="ml-1 text-sm text-slate-300">/50</span></p>
+                          className="ml-1 text-sm text-slate-100">/50</span></p>
                     </div>
                     <div className="rounded-lg border border-line bg-raised p-3">
-                      <p className="font-mono text-xs uppercase tracking-[0.12em] text-slate-300">At risk</p>
+                      <p className="font-mono text-xs uppercase tracking-[0.12em] text-slate-100">At risk</p>
                       <p className="mt-1.5 font-mono text-lg font-bold text-warn">6</p>
                     </div>
                   </div>
@@ -218,7 +218,7 @@ export function Login() {
                         strokeDasharray="4 3" strokeLinecap="round" />
                       <circle cx="312" cy="14" r="3.5" fill="#f0a92e" />
                     </svg>
-                    <div className="flex gap-4 font-mono text-xs text-slate-300">
+                    <div className="flex gap-4 font-mono text-xs text-slate-100">
                       <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-ok"></span>Actual</span>
                       <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-warn"></span>Forecast</span>
                       <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-crit"></span>Safe limit</span>
@@ -257,7 +257,7 @@ export function Login() {
       <div className="mx-auto max-w-7xl px-5 lg:px-8">
         <header className="max-w-2xl">
           <p className="font-mono text-sm uppercase tracking-[0.18em] text-ok">Features</p>
-          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Everything an operator needs on one screen</h2>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl text-white">Everything an operator needs on one screen</h2>
           <p className="mt-4 text-lg leading-relaxed text-slate-300">
             Live telemetry, a deterministic forecast, and an alert trail — designed so the reason
             behind every prediction stays visible and explainable.
@@ -274,7 +274,7 @@ export function Login() {
                 <path d="M3 12h4l2-6 3 12 2.5-8 2 4h4" />
               </svg>
             </span>
-            <h3 className="mt-4 text-base font-semibold">Live telemetry</h3>
+            <h3 className="mt-4 text-base font-semibold text-white">Live telemetry</h3>
             <p className="mt-2 text-sm leading-relaxed text-slate-300">
               Load, voltage, current, and temperature stream in continuously from the simulator and
               refresh transformer readings automatically.
@@ -290,7 +290,7 @@ export function Login() {
                 <path d="m7 15 4-5 3 3 5-7" />
               </svg>
             </span>
-            <h3 className="mt-4 text-base font-semibold">Deterministic prediction</h3>
+            <h3 className="mt-4 text-base font-semibold text-white">Deterministic prediction</h3>
             <p className="mt-2 text-sm leading-relaxed text-slate-300">
               Moving-average and linear-regression forecasting against safe operating thresholds.
               No black box — every number can be traced and explained.
@@ -306,7 +306,7 @@ export function Login() {
                 <path d="M13.7 21a2 2 0 0 1-3.4 0" />
               </svg>
             </span>
-            <h3 className="mt-4 text-base font-semibold">Early-warning alerts</h3>
+            <h3 className="mt-4 text-base font-semibold text-white">Early-warning alerts</h3>
             <p className="mt-2 text-sm leading-relaxed text-slate-300">
               Alerts fire when predicted load, temperature, or health status crosses a limit —
               before the safe operating envelope is actually breached.
@@ -324,7 +324,7 @@ export function Login() {
                 <path d="M12 7v5m0 0H6v5m6-5h6v5" />
               </svg>
             </span>
-            <h3 className="mt-4 text-base font-semibold">Grid tree navigation</h3>
+            <h3 className="mt-4 text-base font-semibold text-white">Grid tree navigation</h3>
             <p className="mt-2 text-sm leading-relaxed text-slate-300">
               A clear hierarchy of grid, zones, and transformers replaces the map. Select any node
               to drill straight into its details.
@@ -340,7 +340,7 @@ export function Login() {
                 <path d="M3 20h18" />
               </svg>
             </span>
-            <h3 className="mt-4 text-base font-semibold">Historical trend chart</h3>
+            <h3 className="mt-4 text-base font-semibold text-white">Historical trend chart</h3>
             <p className="mt-2 text-sm leading-relaxed text-slate-300">
               Recent load history plotted alongside the predicted trend line, so operators can see
               <em className="not-italic text-ink">why</em> a forecast was made.
@@ -356,7 +356,7 @@ export function Login() {
                 <path d="M8 10h8M8 13h5" />
               </svg>
             </span>
-            <h3 className="mt-4 text-base font-semibold">AI operator summary</h3>
+            <h3 className="mt-4 text-base font-semibold text-white">AI operator summary</h3>
             <p className="mt-2 text-sm leading-relaxed text-slate-300">
               Critical alerts come with a plain-English brief and recommended preventive action.
               The AI explains the decision — it never makes it.
@@ -372,13 +372,13 @@ export function Login() {
       <div className="mx-auto max-w-7xl px-5 lg:px-8">
         <header className="max-w-2xl">
           <p className="font-mono text-sm uppercase tracking-[0.18em] text-ok">How it works</p>
-          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">From reading to recommendation</h2>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl text-white">From reading to recommendation</h2>
         </header>
 
         <ol className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <li className="rounded-xl border border-line bg-panel p-6">
             <span className="font-mono text-xs font-bold text-ok">01</span>
-            <h3 className="mt-3 text-base font-semibold">Telemetry arrives</h3>
+            <h3 className="mt-3 text-base font-semibold text-white">Telemetry arrives</h3>
             <p className="mt-2 text-sm leading-relaxed text-slate-300">
               The simulator streams load, voltage, current, and temperature for every transformer
               and persists each reading.
@@ -386,7 +386,7 @@ export function Login() {
           </li>
           <li className="rounded-xl border border-line bg-panel p-6">
             <span className="font-mono text-xs font-bold text-ok">02</span>
-            <h3 className="mt-3 text-base font-semibold">Load is forecast</h3>
+            <h3 className="mt-3 text-base font-semibold text-white">Load is forecast</h3>
             <p className="mt-2 text-sm leading-relaxed text-slate-300">
               The prediction engine projects the load curve forward and compares it against
               each transformer's safe limits.
@@ -394,7 +394,7 @@ export function Login() {
           </li>
           <li className="rounded-xl border border-line bg-panel p-6">
             <span className="font-mono text-xs font-bold text-ok">03</span>
-            <h3 className="mt-3 text-base font-semibold">Alert is raised</h3>
+            <h3 className="mt-3 text-base font-semibold text-white">Alert is raised</h3>
             <p className="mt-2 text-sm leading-relaxed text-slate-300">
               A projected breach raises an alert on the dashboard with severity, affected zone,
               and time to threshold.
@@ -402,7 +402,7 @@ export function Login() {
           </li>
           <li className="rounded-xl border border-line bg-panel p-6">
             <span className="font-mono text-xs font-bold text-ok">04</span>
-            <h3 className="mt-3 text-base font-semibold">Operator acts</h3>
+            <h3 className="mt-3 text-base font-semibold text-white">Operator acts</h3>
             <p className="mt-2 text-sm leading-relaxed text-slate-300">
               The operator opens the transformer, reads the trend and AI brief, and takes the
               recommended preventive action.
@@ -417,7 +417,7 @@ export function Login() {
       <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 lg:grid-cols-2 lg:px-8">
         <div>
           <p className="font-mono text-sm uppercase tracking-[0.18em] text-ok">Grid tree</p>
-          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Navigate the network, not a map</h2>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl text-white">Navigate the network, not a map</h2>
           <p className="mt-4 text-lg leading-relaxed text-slate-300">
             Operators think in feeders and zones, not coordinates. The grid tree mirrors the
             electrical hierarchy so any transformer is two clicks away — and its health status is
@@ -459,35 +459,35 @@ export function Login() {
               Grid · Northeast Region
             </li>
             <li className="ml-5 space-y-1 border-l border-line pl-4">
-              <p className="flex items-center gap-2 py-1.5 text-slate-300">
+              <p className="flex items-center gap-2 py-1.5 text-slate-100" style={{ color: '#ffffff' }}>
                 <span className="h-2 w-2 rounded-full bg-warn"></span> Zone A
               </p>
               <ul className="space-y-1">
-                <li className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-raised">
+                <li className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-raised" style={{ color: '#ffffff' }}>
                   <span className="h-2 w-2 rounded-full bg-ok"></span> T-101
-                  <span className="ml-auto text-sm text-slate-300">62%</span>
+                  <span className="ml-auto text-sm text-slate-100">62%</span>
                 </li>
-                <li className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-raised">
+                <li className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-raised" style={{ color: '#ffffff' }}>
                   <span className="h-2 w-2 rounded-full bg-ok"></span> T-102
-                  <span className="ml-auto text-sm text-slate-300">58%</span>
+                  <span className="ml-auto text-sm text-slate-100">58%</span>
                 </li>
                 <li className="flex items-center gap-2 rounded-md border-l-2 border-crit bg-crit/[0.08] px-2 py-1.5">
                   <span className="h-2 w-2 rounded-full bg-crit"></span>
-                  <span className="font-semibold">T-104</span>
+                  <span className="font-semibold text-white">T-104</span>
                   <span className="ml-auto text-sm font-bold text-crit">96% ▲</span>
                 </li>
               </ul>
-              <p className="flex items-center gap-2 py-1.5 text-slate-300">
+              <p className="flex items-center gap-2 py-1.5 text-slate-100" style={{ color: '#ffffff' }}>
                 <span className="h-2 w-2 rounded-full bg-ok"></span> Zone B
               </p>
               <ul className="space-y-1">
-                <li className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-raised">
+                <li className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-raised" style={{ color: '#ffffff' }}>
                   <span className="h-2 w-2 rounded-full bg-ok"></span> T-201
-                  <span className="ml-auto text-sm text-slate-300">44%</span>
+                  <span className="ml-auto text-sm text-slate-100">44%</span>
                 </li>
-                <li className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-raised">
+                <li className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-raised" style={{ color: '#ffffff' }}>
                   <span className="h-2 w-2 rounded-full bg-warn"></span> T-202
-                  <span className="ml-auto text-sm text-slate-300">81%</span>
+                  <span className="ml-auto text-sm text-slate-100">81%</span>
                 </li>
               </ul>
             </li>
@@ -506,15 +506,15 @@ export function Login() {
             <p className="font-mono text-sm uppercase tracking-[0.14em] text-slate-300">Operator brief · T-104</p>
             <span className="ml-auto rounded bg-raised px-2 py-1 font-mono text-xs text-slate-300">GENERATED</span>
           </div>
-          <div className="space-y-3 pt-4 text-sm leading-relaxed text-slate-300">
+          <div className="space-y-3 pt-4 text-sm leading-relaxed text-slate-100">
             <p>
-              <span className="font-semibold text-ink">Transformer T-104 (Zone A)</span> is trending toward
+              <span className="font-semibold text-white">Transformer T-104 (Zone A)</span> is trending toward
               overload. Load has climbed from 74% to 89% over the last 45 minutes and is projected to
               reach <span className="font-mono text-crit">96%</span> of rated capacity within 28 minutes.
               Oil temperature is at 78 °C and rising.
             </p>
             <p>
-              <span className="font-semibold text-ink">Recommended action:</span> shed approximately
+              <span className="font-semibold text-white">Recommended action:</span> shed approximately
               1.2 MW of non-critical load on the T-104 feeder, or reroute via T-102, which is
               currently operating at 58%.
             </p>
@@ -527,7 +527,7 @@ export function Login() {
 
         <div className="order-1 lg:order-2">
           <p className="font-mono text-sm uppercase tracking-[0.18em] text-ok">AI operator summary</p>
-          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Plain English, at the moment it matters</h2>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl text-white">Plain English, at the moment it matters</h2>
           <p className="mt-4 text-lg leading-relaxed text-slate-300">
             A critical alert is a wall of numbers when a control-room operator has seconds to
             decide. GridGuard turns the engine's output into a short brief: what is happening, how
@@ -548,7 +548,7 @@ export function Login() {
     {/* ══════════════════ CTA ══════════════════ */}
     <section className="border-t border-line bg-base py-20">
       <div className="mx-auto max-w-3xl px-5 text-center lg:px-8">
-        <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Ready to open the control room?</h2>
+        <h2 className="text-3xl font-bold tracking-tight sm:text-4xl text-white">Ready to open the control room?</h2>
         <p className="mx-auto mt-4 max-w-xl text-lg leading-relaxed text-slate-300">
           Sign in with your operator account to view live simulated telemetry, the grid tree, and
           active predictions.
@@ -615,7 +615,7 @@ export function Login() {
         </svg>
       </span>
 
-      <h2 id="signinTitle" className="mt-4 text-lg font-semibold">Operator sign in</h2>
+      <h2 id="signinTitle" className="mt-4 text-lg font-semibold text-white">Operator sign in</h2>
       <p className="mt-1 text-sm text-slate-300">Access the GridGuard operations dashboard.</p>
 
       <form className="mt-6 space-y-4" onSubmit={(e) => { e.preventDefault(); navigate('/dashboard'); }} noValidate>

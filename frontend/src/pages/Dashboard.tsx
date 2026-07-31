@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { GridTree } from '@/components/dashboard/GridTree';
+import { ChatWidget } from '@/components/assistant';
+import { TransformerLoadChart } from '@/components/charts/TransformerLoadChart';
 import { MOCK_GRID_NAME, MOCK_ZONES } from '@/lib/mock-data';
 import type { HealthStatus, Transformer } from '@/types/grid';
 import { statusBg, statusColor, statusLabel } from '@/utils/grid-status';
@@ -76,7 +78,7 @@ function LoadBar({ value, predicted, settings }: { value: number; predicted?: nu
       </div>
       {predicted != null && (
         <div className="flex justify-between text-sm mt-0.5">
-          <span className="text-slate-300">Predicted</span>
+          <span className="text-slate-100">Predicted</span>
           <span className="font-mono text-slate-200">{predicted}%</span>
         </div>
       )}
@@ -104,7 +106,7 @@ function OverviewPage({ onNavigate, settings }: { onNavigate: (p: Page) => void;
           <div key={kpi.label} className={`glass-panel rounded-xl p-5 flex flex-col gap-1 hover:-translate-y-1 transition-all duration-300 ${kpi.glow}`}>
             <p className="font-mono text-base uppercase tracking-[0.12em] text-slate-200">{kpi.label}</p>
             <p className={`text-3xl font-extrabold ${kpi.color}`}>{kpi.value}</p>
-            <p className="text-sm text-slate-300">{kpi.sub}</p>
+            <p className="text-sm text-slate-200">{kpi.sub}</p>
           </div>
         ))}
       </div>
@@ -257,7 +259,7 @@ function GridTreePage({ settings }: { settings: Settings }) {
         <GridTree gridName={MOCK_GRID_NAME} zones={zones} />
       </div>
 
-      <p className="font-mono text-base text-slate-300">
+      <p className="font-mono text-base text-slate-200">
         Select a transformer to open its detail page.
       </p>
     </div>
@@ -288,7 +290,7 @@ function AssetsPage({ initialSelected, settings }: { initialSelected?: string; s
           <h2 className="text-lg font-bold text-white flex-1">Assets</h2>
           {/* Search */}
           <div className="relative">
-            <svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-300" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-200" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -308,7 +310,7 @@ function AssetsPage({ initialSelected, settings }: { initialSelected?: string; s
                       : f === 'ok' ? 'bg-ok/20 border-ok/40 text-ok'
                       : f === 'warn' ? 'bg-warn/20 border-warn/40 text-warn'
                       : 'bg-crit/20 border-crit/40 text-crit'
-                    : 'bg-transparent border-white/5 text-slate-300 hover:border-white/15 hover:text-slate-100'
+                    : 'bg-transparent border-white/5 text-slate-200 hover:border-white/15 hover:text-slate-100'
                 }`}
               >
                 {f === 'all' ? `All (${allAssets.length})` : `${statusLabel(f)} (${allAssets.filter(a => a.status === f).length})`}
@@ -320,13 +322,13 @@ function AssetsPage({ initialSelected, settings }: { initialSelected?: string; s
         {/* Table */}
         <div className="rounded-xl border border-white/10 bg-panel/60 backdrop-blur-xl overflow-hidden shadow-2xl">
           {/* Table head */}
-          <div className="grid grid-cols-[1fr_1fr_2fr_1fr_1fr_1fr_1fr] gap-3 px-4 py-2.5 border-b border-white/5 font-mono text-base uppercase tracking-[0.1em] text-slate-300">
+          <div className="grid grid-cols-[1fr_1fr_2fr_1fr_1fr_1fr_1fr] gap-3 px-4 py-2.5 border-b border-white/5 font-mono text-base uppercase tracking-[0.1em] text-slate-200">
             <span>ID</span><span>Zone</span><span>Load</span><span>Voltage</span><span>Temp</span><span>Status</span><span>Updated</span>
           </div>
           {/* Rows */}
           <div className="divide-y divide-white/[0.04]">
             {filtered.length === 0 && (
-              <div className="py-12 text-center text-slate-400 text-sm font-mono">No assets match the filter</div>
+              <div className="py-12 text-center text-slate-300 text-sm font-mono">No assets match the filter</div>
             )}
             {filtered.map(asset => (
               <button
@@ -342,7 +344,7 @@ function AssetsPage({ initialSelected, settings }: { initialSelected?: string; s
                 <span className="font-mono text-base text-slate-100">{asset.voltage} kV</span>
                 <span className={`font-mono text-base ${asset.tempC >= settings.tempThreshold ? 'text-warn' : 'text-slate-100'}`}>{asset.tempC}°C</span>
                 <StatusBadge status={asset.status} />
-                <span className="font-mono text-base text-slate-300">{asset.lastUpdated}</span>
+                <span className="font-mono text-base text-slate-200">{asset.lastUpdated}</span>
               </button>
             ))}
           </div>
@@ -357,9 +359,9 @@ function AssetsPage({ initialSelected, settings }: { initialSelected?: string; s
             <div>
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <p className="font-mono text-base uppercase tracking-[0.12em] text-slate-300">Asset Details</p>
+                  <p className="font-mono text-base uppercase tracking-[0.12em] text-slate-200">Asset Details</p>
                   <h3 className="text-2xl font-extrabold text-white">{selected.id}</h3>
-                  <p className="text-base text-slate-300 mt-0.5">{selected.type} · {selected.zone}</p>
+                  <p className="text-base text-slate-200 mt-0.5">{selected.type} · {selected.zone}</p>
                 </div>
                 <StatusBadge status={selected.status} />
               </div>
@@ -374,44 +376,18 @@ function AssetsPage({ initialSelected, settings }: { initialSelected?: string; s
                 { label: 'Pred. Load', val: `${selected.predictedLoad}%`, icon: '↑', alert: (selected.predictedLoad ?? 0) >= settings.critThreshold },
               ].map(m => (
                 <div key={m.label} className={`bg-raised/50 border rounded-lg p-3 ${m.alert ? 'border-warn/30' : 'border-white/5'}`}>
-                  <p className="text-sm text-slate-300 font-mono uppercase">{m.label}</p>
+                  <p className="text-sm text-slate-200 font-mono uppercase">{m.label}</p>
                   <p className={`text-sm font-bold mt-0.5 ${m.alert ? 'text-warn' : 'text-white'}`}>{m.val}</p>
                 </div>
               ))}
             </div>
 
-            {/* Trend mini */}
-            <div className="bg-raised/30 border border-white/5 rounded-lg p-3">
-              <p className="font-mono text-base uppercase text-slate-300 mb-2">Load History</p>
-              <svg viewBox="0 0 240 70" className="w-full h-14" preserveAspectRatio="none">
-                {selected.status === 'crit' && <line x1="0" y1="14" x2="240" y2="14" stroke="#ef4444" strokeWidth="0.5" strokeDasharray="2 3" opacity="0.4" />}
-                <defs>
-                  <linearGradient id={`grad-${selected.id}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={statusColor(selected.status)} stopOpacity="0.3" />
-                    <stop offset="100%" stopColor={statusColor(selected.status)} stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <path
-                  d={selected.status === 'crit'
-                    ? "M0 58 L30 55 L60 57 L90 50 L120 48 L150 42 L180 35 L210 26 L240 14"
-                    : selected.status === 'warn'
-                    ? "M0 52 L48 47 L96 49 L144 43 L192 39 L240 34"
-                    : "M0 48 L48 44 L96 46 L144 40 L192 43 L240 40"}
-                  fill={`url(#grad-${selected.id})`}
-                />
-                <path
-                  d={selected.status === 'crit'
-                    ? "M0 58 L30 55 L60 57 L90 50 L120 48 L150 42 L180 35 L210 26 L240 14"
-                    : selected.status === 'warn'
-                    ? "M0 52 L48 47 L96 49 L144 43 L192 39 L240 34"
-                    : "M0 48 L48 44 L96 46 L144 40 L192 43 L240 40"}
-                  fill="none"
-                  stroke={statusColor(selected.status)}
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </div>
+            {/* Load History Chart */}
+            <TransformerLoadChart
+              transformerId={selected.id}
+              critThreshold={settings.critThreshold}
+              warnThreshold={settings.warnThreshold}
+            />
 
             {/* AI brief for critical */}
             {selected.status === 'crit' && (
@@ -426,12 +402,12 @@ function AssetsPage({ initialSelected, settings }: { initialSelected?: string; s
               </div>
             )}
 
-            <p className="text-sm text-slate-400 font-mono">Last updated: {selected.lastUpdated}</p>
+            <p className="text-sm text-slate-200 font-mono">Last updated: {selected.lastUpdated}</p>
           </div>
         ) : (
           <div className="rounded-xl border border-white/5 bg-panel/30 p-8 flex flex-col items-center justify-center gap-3 text-center">
             <svg viewBox="0 0 24 24" className="h-8 w-8 text-ink/20" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
-            <p className="text-sm text-slate-300">Select an asset from the table to view details</p>
+            <p className="text-sm text-slate-200">Select an asset from the table to view details</p>
           </div>
         )}
       </div>
@@ -458,7 +434,7 @@ function AlertsPage({ settings }: { settings: Settings }) {
       <div className="rounded-xl border border-line bg-panel p-6">
         <h2 className="text-lg font-bold text-ink mb-4">Active Alerts</h2>
         {alerts.length === 0 ? (
-          <p className="text-slate-300">No active alerts</p>
+          <p className="text-slate-200">No active alerts</p>
         ) : (
           <div className="space-y-3">
             {alerts.map(alert => (
@@ -466,7 +442,7 @@ function AlertsPage({ settings }: { settings: Settings }) {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-semibold text-ink">{alert.transformer} ({alert.zone})</p>
-                    <p className="text-sm text-slate-300">Load: {alert.load}% → Predicted: {alert.predicted}%</p>
+                    <p className="text-sm text-slate-200">Load: {alert.load}% → Predicted: {alert.predicted}%</p>
                   </div>
                   <span className={`rounded-lg px-3 py-1 font-mono text-xs font-bold uppercase ${alert.status === 'crit' ? 'bg-crit/20 text-crit' : 'bg-warn/20 text-warn'}`}>
                     {alert.status === 'crit' ? 'Critical' : 'Warning'}
@@ -504,19 +480,19 @@ function ReportingPage({ settings }: { settings: Settings }) {
         {/* Key Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-slate-800/50 rounded-lg p-4">
-            <p className="text-xs text-slate-400 uppercase tracking-wider">Average Load</p>
+            <p className="text-xs text-slate-200 uppercase tracking-wider">Average Load</p>
             <p className="text-3xl font-bold text-blue-400 mt-2">{avgLoad}%</p>
           </div>
           <div className="bg-slate-800/50 rounded-lg p-4">
-            <p className="text-xs text-slate-400 uppercase tracking-wider">Avg Temperature</p>
+            <p className="text-xs text-slate-200 uppercase tracking-wider">Avg Temperature</p>
             <p className="text-3xl font-bold text-orange-400 mt-2">{avgTemp}°C</p>
           </div>
           <div className="bg-slate-800/50 rounded-lg p-4">
-            <p className="text-xs text-slate-400 uppercase tracking-wider">Max Load</p>
+            <p className="text-xs text-slate-200 uppercase tracking-wider">Max Load</p>
             <p className="text-3xl font-bold text-red-400 mt-2">{maxLoad}%</p>
           </div>
           <div className="bg-slate-800/50 rounded-lg p-4">
-            <p className="text-xs text-slate-400 uppercase tracking-wider">Min Load</p>
+            <p className="text-xs text-slate-200 uppercase tracking-wider">Min Load</p>
             <p className="text-3xl font-bold text-green-400 mt-2">{minLoad}%</p>
           </div>
         </div>
@@ -524,15 +500,15 @@ function ReportingPage({ settings }: { settings: Settings }) {
         {/* Health Summary */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="bg-emerald-900/30 border border-emerald-700/30 rounded-lg p-4">
-            <p className="text-sm text-slate-300">Healthy Transformers</p>
+            <p className="text-sm text-slate-200">Healthy Transformers</p>
             <p className="text-4xl font-bold text-emerald-400 mt-2">{healthyCount}</p>
           </div>
           <div className="bg-amber-900/30 border border-amber-700/30 rounded-lg p-4">
-            <p className="text-sm text-slate-300">Warning Transformers</p>
+            <p className="text-sm text-slate-200">Warning Transformers</p>
             <p className="text-4xl font-bold text-amber-400 mt-2">{warnCount}</p>
           </div>
           <div className="bg-red-900/30 border border-red-700/30 rounded-lg p-4">
-            <p className="text-sm text-slate-300">Critical Transformers</p>
+            <p className="text-sm text-slate-200">Critical Transformers</p>
             <p className="text-4xl font-bold text-red-400 mt-2">{critCount}</p>
           </div>
         </div>
@@ -542,11 +518,11 @@ function ReportingPage({ settings }: { settings: Settings }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700">
-                <th className="text-left p-3 text-slate-300 font-semibold">Transformer</th>
-                <th className="text-right p-3 text-slate-300 font-semibold">Load</th>
-                <th className="text-right p-3 text-slate-300 font-semibold">Predicted</th>
-                <th className="text-right p-3 text-slate-300 font-semibold">Temp</th>
-                <th className="text-center p-3 text-slate-300 font-semibold">Status</th>
+                <th className="text-left p-3 text-slate-200 font-semibold">Transformer</th>
+                <th className="text-right p-3 text-slate-200 font-semibold">Load</th>
+                <th className="text-right p-3 text-slate-200 font-semibold">Predicted</th>
+                <th className="text-right p-3 text-slate-200 font-semibold">Temp</th>
+                <th className="text-center p-3 text-slate-200 font-semibold">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -592,7 +568,7 @@ function SettingsPage({ settings, onSettingsChange }: { settings: Settings; onSe
     <div className="p-6 max-w-2xl">
       <div className="rounded-xl border border-line bg-panel p-6">
         <h2 className="text-2xl font-bold text-white mb-2">Settings & Thresholds</h2>
-        <p className="text-slate-400 text-sm mb-6">Adjust transformer load and temperature thresholds. Changes apply instantly to the dashboard.</p>
+        <p className="text-slate-200 text-sm mb-6">Adjust transformer load and temperature thresholds. Changes apply instantly to the dashboard.</p>
 
         <div className="space-y-6">
           <div className="bg-slate-800/30 rounded-lg p-4">
@@ -605,7 +581,7 @@ function SettingsPage({ settings, onSettingsChange }: { settings: Settings; onSe
               onChange={(e) => setWarnThreshold(Number(e.target.value))}
               className="w-full"
             />
-            <p className="text-sm text-slate-400 mt-2">Transformers exceeding this load will show a warning (yellow)</p>
+            <p className="text-sm text-slate-200 mt-2">Transformers exceeding this load will show a warning (yellow)</p>
           </div>
 
           <div className="bg-slate-800/30 rounded-lg p-4">
@@ -618,7 +594,7 @@ function SettingsPage({ settings, onSettingsChange }: { settings: Settings; onSe
               onChange={(e) => setCritThreshold(Number(e.target.value))}
               className="w-full"
             />
-            <p className="text-sm text-slate-400 mt-2">Transformers exceeding this load will show as critical (red)</p>
+            <p className="text-sm text-slate-200 mt-2">Transformers exceeding this load will show as critical (red)</p>
           </div>
 
           <div className="bg-slate-800/30 rounded-lg p-4">
@@ -631,23 +607,23 @@ function SettingsPage({ settings, onSettingsChange }: { settings: Settings; onSe
               onChange={(e) => setTempThreshold(Number(e.target.value))}
               className="w-full"
             />
-            <p className="text-sm text-slate-400 mt-2">Alerts trigger when transformer temperature exceeds this value</p>
+            <p className="text-sm text-slate-200 mt-2">Alerts trigger when transformer temperature exceeds this value</p>
           </div>
 
           {/* Current Values Display */}
           <div className="border border-slate-700 rounded-lg p-4 bg-slate-900/50">
-            <p className="text-sm text-slate-300 mb-3 font-semibold">Current Settings:</p>
+            <p className="text-sm text-slate-200 mb-3 font-semibold">Current Settings:</p>
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                <p className="text-xs text-slate-400">Warning</p>
+                <p className="text-xs text-slate-200">Warning</p>
                 <p className="text-xl font-bold text-amber-400">{warnThreshold}%</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Critical</p>
+                <p className="text-xs text-slate-200">Critical</p>
                 <p className="text-xl font-bold text-red-400">{critThreshold}%</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Temperature</p>
+                <p className="text-xs text-slate-200">Temperature</p>
                 <p className="text-xl font-bold text-orange-400">{tempThreshold}°C</p>
               </div>
             </div>
@@ -679,6 +655,7 @@ export function Dashboard() {
   }
 
   return (
+    <>
     <AppShell
       title={PAGE_TITLES[page]}
       activeKey={page}
@@ -706,5 +683,7 @@ export function Dashboard() {
       {page === 'reporting' && <div className="h-full overflow-y-auto grid-background"><ReportingPage settings={settings} /></div>}
       {page === 'settings' && <div className="h-full overflow-y-auto grid-background"><SettingsPage settings={settings} onSettingsChange={setSettings} /></div>}
     </AppShell>
+    <ChatWidget />
+    </>
   );
 }
